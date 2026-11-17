@@ -1,0 +1,348 @@
+{
+  "ui_resources": [
+    {
+      "listed": {
+        "name": "people_ui_contacts",
+        "uri": "ui://people/contacts",
+        "description": "The CRM app, opening on the contacts list.",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          },
+          "fastmcp": {
+            "tags": []
+          }
+        }
+      },
+      "read": {
+        "uri": "ui://people/contacts",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          }
+        },
+        "sha256": "29b12f5cd6d16b2dfa9c6819896d5df1347d09955fff4d5a08fc203badaa67db"
+      }
+    },
+    {
+      "listed": {
+        "name": "people_ui_opportunities",
+        "uri": "ui://people/opportunities",
+        "description": "The CRM app, opening on the deal pipeline.",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          },
+          "fastmcp": {
+            "tags": []
+          }
+        }
+      },
+      "read": {
+        "uri": "ui://people/opportunities",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          }
+        },
+        "sha256": "23bd0e567c8b6f0e2514ef67feae7509b66d8cf6fd622b6d5876846558889fef"
+      }
+    },
+    {
+      "listed": {
+        "name": "people_ui_organizations",
+        "uri": "ui://people/organizations",
+        "description": "The CRM app, opening on the organizations list.",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          },
+          "fastmcp": {
+            "tags": []
+          }
+        }
+      },
+      "read": {
+        "uri": "ui://people/organizations",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          }
+        },
+        "sha256": "9aef75dfbcdb733d8930d0fade925d792bdc60cc8278cd0f251852e8986a31e7"
+      }
+    },
+    {
+      "listed": {
+        "name": "people_ui_settings",
+        "uri": "ui://people/settings",
+        "description": "The CRM app's settings: custom fields and pipeline stages.",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          },
+          "fastmcp": {
+            "tags": []
+          }
+        }
+      },
+      "read": {
+        "uri": "ui://people/settings",
+        "mimeType": "text/html;profile=mcp-app",
+        "_meta": {
+          "ui": {
+            "csp": {}
+          }
+        },
+        "sha256": "810127c2cc7ed8606443f41df18feb1ed4bb2f54e1073197800fe32419e7a24b"
+      }
+    }
+  ],
+  "ui_resource_templates": [],
+  "tool_meta": {
+    "archive_contact": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "archive_organization": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "count_records": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "create_opportunity": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "define_field": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "define_pipeline_stage": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "define_signal_type": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "delete_contact": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "delete_organization": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "find_or_create_contact": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "find_or_create_organization": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "get_contact": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "get_opportunity": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "get_organization": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "get_pipeline": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "get_proof_point": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "get_signal": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "import_contacts": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "import_organizations": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "link_similar_organizations": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_contacts": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_fields": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_interactions": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_opportunities": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_organizations": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_proof_points": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_signal_types": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_signals": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "list_similar_organizations": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "log_interaction": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "merge_contacts": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "merge_organizations": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "move_opportunity": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "promote_organization": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "record_proof_point": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "record_signal": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "resolve_external_refs": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_contact": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_field": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_opportunity": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_organization": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_pipeline_stage": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_signal": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "update_signal_type": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "verify_proof_point": {
+      "fastmcp": {
+        "tags": []
+      }
+    },
+    "withdraw_signal": {
+      "fastmcp": {
+        "tags": []
+      }
+    }
+  },
+  "record_views": {
+    "people://contacts/{contact_id}": null,
+    "people://opportunities/{opportunity_id}": null,
+    "people://organizations/{organization_id}": null,
+    "people://proof-points/{proof_point_id}": null,
+    "people://signals/{signal_id}": null
+  }
+}

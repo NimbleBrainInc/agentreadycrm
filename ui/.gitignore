@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.vite/
+# The dev preview's own database (npm run dev).
+.preview/
+# npm is canonical here (package-lock.json is tracked); ignore a stray bun lockfile.
+bun.lock
