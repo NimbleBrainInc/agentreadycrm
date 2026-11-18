@@ -82,6 +82,11 @@ it again.
 
 stdio needs no token: a process that can start the server can already read the database.
 
+One read needs no token: `GET /mcp/server-card`, the server's MCP Server Card, which a host
+reads before it holds a credential. It is public metadata (the server's name, version, title,
+description and view placements), the same on every install, and the loopback checks still
+apply to it.
+
 ## The schema and upgrades
 
 The local runtime has its own Alembic history, `src/mcp_people_local/migrations/`. It has no

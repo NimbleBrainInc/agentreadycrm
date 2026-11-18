@@ -131,7 +131,11 @@ class LocalRuntime:
     def wrap_http(self, app: ASGIApp) -> ASGIApp:
         # The loopback checks run first, so a foreign page or host is refused (403) before
         # its token is considered; the token then keeps out other local processes (401).
+        # The Server Card is the one read a host makes before it holds the token.
+        mcp_path = str(getattr(getattr(app, "state", None), "path", "/mcp")).rstrip("/")
         path = auth.token_path(self.db_path)
-        guarded = auth.BearerGuard(app, auth.load_or_create(path))
+        guarded = auth.BearerGuard(
+            app, auth.load_or_create(path), open_paths=frozenset({f"{mcp_path}/server-card"})
+        )
         logger.info("local HTTP requires the bearer token stored in %s", path)
         return LoopbackGuard(guarded)

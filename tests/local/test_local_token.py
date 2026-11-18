@@ -141,3 +141,28 @@ async def test_stdio_needs_no_token_and_makes_none(tmp_path: Path) -> None:
         result = await client.call_tool("list_organizations", {})
     assert result.structured_content is not None
     assert not token_path(db).exists()
+
+
+def _get(port: int, path: str, **headers: str) -> tuple[int, str, dict[str, str]]:
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", path, headers=headers)
+        response = conn.getresponse()
+        return response.status, response.read().decode(), dict(response.getheaders())
+    finally:
+        conn.close()
+
+
+def test_the_server_card_needs_no_token_and_nothing_else_does(tmp_path: Path) -> None:
+    """A host reads the card before it holds a credential; every other request still needs one."""
+    db = tmp_path / "crm.db"
+    with http_server(db) as port:
+        card = _get(port, "/mcp/server-card")
+        beside = [_get(port, path)[0] for path in ("/mcp", "/mcp/server-card/", "/server-card")]
+        foreign = _get(port, "/mcp/server-card", Origin="https://attacker.example")
+    status, body, _ = card
+    assert status == 200
+    assert json.loads(body)["name"] == "com.agentreadycrm/agentreadycrm"
+    assert beside == [401, 401, 401]
+    # The loopback checks still run first.
+    assert foreign[0] == 403

@@ -13,6 +13,10 @@ read:
 
 ``agentreadycrm --print-token`` prints it for an installer. stdio needs no token: a process
 that can start the server already has the database.
+
+One read needs no token: ``GET`` on the Server Card (``<mcp-path>/server-card``), which a host
+reads before it has a credential. It is public metadata, built at import from constants, and
+the loopback checks still apply to it.
 """
 
 from __future__ import annotations
@@ -78,14 +82,22 @@ def _presented(scope: Scope) -> bytes | None:
 class BearerGuard:
     """ASGI middleware that refuses, with 401, an HTTP or WebSocket request without the token.
 
-    The comparison is constant-time, and the refusal says nothing about the token.
+    The comparison is constant-time, and the refusal says nothing about the token. A ``GET``
+    on one of ``open_paths`` (exactly) passes without it.
     """
 
-    def __init__(self, app: ASGIApp, token: str) -> None:
+    def __init__(self, app: ASGIApp, token: str, open_paths: frozenset[str] = frozenset()) -> None:
         self.app = app
         self._token = token.encode("ascii")
+        self._open_paths = open_paths
 
     def authorized(self, scope: Scope) -> bool:
+        if (
+            scope["type"] == "http"
+            and scope.get("method") == "GET"
+            and scope.get("path") in self._open_paths
+        ):
+            return True
         presented = _presented(scope)
         return presented is not None and hmac.compare_digest(presented, self._token)
 
