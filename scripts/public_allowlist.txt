@@ -1,0 +1,14 @@
+# Generic uses that a pattern in scripts/check_public.py would otherwise catch. Each entry is a
+# regular expression (case-insensitive), with a comment line above it saying why it is allowed.
+
+# Python's name for the operating system, read to find the per-user data directory.
+sys\.pl[a]tform
+
+# The mcpb-pack action's inputs naming the operating system and CPU a bundle runs on.
+pl[a]tform-(os|arch)
+
+# "HQ" as an organization's headquarters, in that field's description.
+\bh[q] location\b
+
+# "hq" as a CSV column header the import maps to an organization's region.
+"h[q]"

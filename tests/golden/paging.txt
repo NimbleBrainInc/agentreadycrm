@@ -1,0 +1,135 @@
+== contacts ==
+WyJjb250YWN0cyIsIjIwMjYtMDMtMDRUMDU6MDY6MDcuODkxMDExKzAwOjAwIiwiY3RfMDFKTlE4WDVaM0s3TTJQNFI2VDhWMFcyWTQiXQ
+WHERE
+(contact.created_at, contact.id) < ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'ct_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+contact.created_at DESC
+ORDER BY
+contact.id DESC
+
+== interactions ==
+WyJpbnRlcmFjdGlvbnMiLCIyMDI2LTAzLTA0VDA1OjA2OjA3Ljg5MTAxMSswMDowMCIsIml4XzAxSk5ROFg1WjNLN00yUDRSNlQ4VjBXMlk0Il0
+WHERE
+(interaction.occurred_at, interaction.id) < ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'ix_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+interaction.occurred_at DESC
+ORDER BY
+interaction.id DESC
+
+== opportunities ==
+WyJvcHBvcnR1bml0aWVzIiwiMjAyNi0wMy0wNFQwNTowNjowNy44OTEwMTErMDA6MDAiLCJvcHBfMDFKTlE4WDVaM0s3TTJQNFI2VDhWMFcyWTQiXQ
+WHERE
+(opportunity.created_at, opportunity.id) < ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'opp_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+opportunity.created_at DESC
+ORDER BY
+opportunity.id DESC
+
+== organizations ==
+WyJvcmdhbml6YXRpb25zIiwiMjAyNi0wMy0wNFQwNTowNjowNy44OTEwMTErMDA6MDAiLCJvcmdfMDFKTlE4WDVaM0s3TTJQNFI2VDhWMFcyWTQiXQ
+WHERE
+(organization.created_at, organization.id) < ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'org_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+organization.created_at DESC
+ORDER BY
+organization.id DESC
+
+== proof_points ==
+WyJwcm9vZl9wb2ludHMiLCIyMDI2LTAzLTA0VDA1OjA2OjA3Ljg5MTAxMSswMDowMCIsInBwXzAxSk5ROFg1WjNLN00yUDRSNlQ4VjBXMlk0Il0
+WHERE
+(proof_point.created_at, proof_point.id) < ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'pp_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+proof_point.created_at DESC
+ORDER BY
+proof_point.id DESC
+
+== signal_changes ==
+WyJzaWduYWxfY2hhbmdlcyIsIjIwMjYtMDMtMDRUMDU6MDY6MDcuODkxMDExKzAwOjAwIiwic2lnXzAxSk5ROFg1WjNLN00yUDRSNlQ4VjBXMlk0Il0
+WHERE
+(signal.updated_at, signal.id) > ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'sig_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+signal.updated_at ASC
+ORDER BY
+signal.id ASC
+
+== signals ==
+WyJzaWduYWxzIiwiMjAyNi0wMy0wNFQwNTowNjowNy44OTEwMTErMDA6MDAiLCJzaWdfMDFKTlE4WDVaM0s3TTJQNFI2VDhWMFcyWTQiXQ
+WHERE
+(signal.created_at, signal.id) < ($1::TIMESTAMP WITH TIME ZONE, $2::VARCHAR)
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = 'sig_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+signal.created_at DESC
+ORDER BY
+signal.id DESC
+
+== sorted_number_desc ==
+WyJjb250YWN0czotc2NvcmUiLCI4Ny41MCIsImN0XzAxSk5ROFg1WjNLN00yUDRSNlQ4VjBXMlk0Il0
+WHERE
+CAST(((contact.fields[$1::TEXT]) ->> $2::TEXT) AS NUMERIC) < $3::NUMERIC OR CAST(((contact.fields[$1::TEXT]) ->> $2::TEXT) AS NUMERIC) IS NULL OR CAST(((contact.fields[$1::TEXT]) ->> $2::TEXT) AS NUMERIC) = $4::NUMERIC AND contact.id < $5::VARCHAR
+  fields_1 = 'score'
+  param_1 = 'v'
+  param_2 = Decimal('87.50')
+  param_3 = Decimal('87.50')
+  param_4 = 'ct_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+CAST((contact.fields[$1::TEXT]) ->> $2::TEXT AS NUMERIC) DESC NULLS LAST
+  fields_1 = 'score'
+  param_1 = 'v'
+ORDER BY
+contact.id DESC
+
+== sorted_number_unset ==
+WyJjb250YWN0czotc2NvcmUiLG51bGwsImN0XzAxSk5ROFg1WjNLN00yUDRSNlQ4VjBXMlk0Il0
+WHERE
+CAST(((contact.fields[$1::TEXT]) ->> $2::TEXT) AS NUMERIC) IS NULL AND contact.id < $3::VARCHAR
+  fields_1 = 'score'
+  param_1 = 'v'
+  param_2 = 'ct_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+CAST((contact.fields[$1::TEXT]) ->> $2::TEXT AS NUMERIC) DESC NULLS LAST
+  fields_1 = 'score'
+  param_1 = 'v'
+ORDER BY
+contact.id DESC
+
+== sorted_text_asc ==
+WyJjb250YWN0czpyZWdpb24iLCJQYWNpZmljIiwiY3RfMDFKTlE4WDVaM0s3TTJQNFI2VDhWMFcyWTQiXQ
+WHERE
+((contact.fields[$1::TEXT]) ->> $2::TEXT) > $3::VARCHAR OR ((contact.fields[$1::TEXT]) ->> $2::TEXT) IS NULL OR ((contact.fields[$1::TEXT]) ->> $2::TEXT) = $4::VARCHAR AND contact.id > $5::VARCHAR
+  fields_1 = 'region'
+  param_1 = 'v'
+  param_2 = 'Pacific'
+  param_3 = 'Pacific'
+  param_4 = 'ct_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+(contact.fields[$1::TEXT]) ->> $2::TEXT ASC NULLS LAST
+  fields_1 = 'region'
+  param_1 = 'v'
+ORDER BY
+contact.id ASC
+
+== sorted_timestamp_asc ==
+WyJjb250YWN0czp1cGRhdGVkX2F0IiwiMjAyNi0wMy0wNFQwNTowNjowNy44OTEwMTErMDA6MDAiLCJjdF8wMUpOUThYNVozSzdNMlA0UjZUOFYwVzJZNCJd
+WHERE
+contact.updated_at > $1::TIMESTAMP WITH TIME ZONE OR contact.updated_at IS NULL OR contact.updated_at = $2::TIMESTAMP WITH TIME ZONE AND contact.id > $3::VARCHAR
+  param_1 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_2 = datetime.datetime(2026, 3, 4, 5, 6, 7, 891011, tzinfo=datetime.timezone.utc)
+  param_3 = 'ct_01JNQ8X5Z3K7M2P4R6T8V0W2Y4'
+ORDER BY
+contact.updated_at ASC NULLS LAST
+ORDER BY
+contact.id ASC
+

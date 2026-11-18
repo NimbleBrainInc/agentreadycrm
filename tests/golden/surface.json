@@ -1,0 +1,4118 @@
+{
+  "instructions": "A CRM of organizations, contacts, the interactions with them, deals in a pipeline, and the evidence behind a claim.\n\nResolve before you write. find_or_create_contact and find_or_create_organization return the record you already hold (by external reference, email or domain, else name), so call one once per person or company with everything you know. To change a record use update_*; to join two records of one person or company use merge_*, after the user confirms. A deal has no natural key: check list_opportunities(organization_id=..., query=...) before create_opportunity.\n\nField or dossier. Anything you would filter, sort or count by is a field: list_fields lists them, define_field adds one, and update_*(fields={key: value}) writes it. What is only read is the dossier: update_*(dossier_append=...). A fact about a company goes on the organization, never on each of its contacts. A fact you would cite is a signal (record_signal) or a proof point (record_proof_point), not dossier prose.\n\nQuery, don't walk. list_contacts, list_organizations and list_opportunities take a free-text query, a filter, a sort and columns, a page at a time; count_records says how a workspace divides in one call. A filter is {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} / {\"or\": [...]} of those. Operators by field type: text eq, ne, in, not_in, contains, starts_with; select eq, ne, in, not_in; number and date eq, ne, gt, gte, lt, lte, between; timestamp gt, gte, lt, lte, between; boolean eq; list and multi_select has, has_all; any field is_set (true or false).\n\nIds (ct_, org_, op_, sg_, pp_) come from a result; never construct one. Every result carries next_step: follow it. Hosts that load skills can read skill://people/SKILL.md and skill://people-evidence/SKILL.md for more.",
+  "capabilities": {
+    "logging": {},
+    "prompts": {
+      "listChanged": false
+    },
+    "resources": {
+      "subscribe": false,
+      "listChanged": false
+    },
+    "tools": {
+      "listChanged": false
+    },
+    "extensions": {
+      "io.modelcontextprotocol/ui": {},
+      "io.modelcontextprotocol/skills": {}
+    }
+  },
+  "tools": [
+    {
+      "name": "archive_contact",
+      "title": "Archive Contact",
+      "description": "Archive a contact: hide them from the default lists and counts, reversibly. Or restore one.\n\nCall it when the user is done with someone but may want them back: a lead that went\nnowhere, a person who left the company, a stale record. Nothing is deleted: the contact,\ntheir interactions and their stage stay as they are, ``get_contact`` still reads them, and\n``list_contacts(include_archived=true)`` lists them. ``archived=false`` restores one.\nArchiving is not a stage: to record how far along someone is, set ``status`` with\n``update_contact``. To remove a person for good, only when the user asks, use\n``delete_contact``; to join two records of one person, ``merge_contacts``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact to archive or restore."
+          },
+          "archived": {
+            "default": true,
+            "type": "boolean",
+            "description": "true archives the contact (default); false restores them. A repeat changes\nnothing."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "archive_organization",
+      "title": "Archive Organization",
+      "description": "Archive an organization: hide it from the default lists and counts, reversibly. Or restore one.\n\nCall it when the user is done with a company but may want it back: a lost account, a\ncompany that no longer fits. Nothing is deleted: the organization, its contacts, deals\nand history stay as they are, ``get_organization`` still reads it, and\n``list_organizations(include_archived=true)`` lists it. Its contacts are not archived\nwith it. ``archived=false`` restores one. To remove a company for good, only when the\nuser asks, use ``delete_organization``; to join two records of one company,\n``merge_organizations``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization to archive or restore."
+          },
+          "archived": {
+            "default": true,
+            "type": "boolean",
+            "description": "true archives the organization (default); false restores it. A repeat\nchanges nothing."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "count_records",
+      "title": "Count Records",
+      "description": "Count contacts, organizations or deals by one field's values, most common first.\n\nCall it to see how a workspace divides without walking it: how many contacts per\naudience or email status, how many organizations per ``fit``, how many open deals per\nstage. It takes the same ``filter`` as the list tools, so it also answers \"of the\nstrong-fit companies, how many per industry\". Deals count open ones only, unless the\nfilter names stage or outcome. To read the records behind a value, use the list tool\nwith a filter on it.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entity": {
+            "enum": [
+              "contact",
+              "organization",
+              "opportunity"
+            ],
+            "type": "string",
+            "description": "What to count."
+          },
+          "field": {
+            "type": "string",
+            "description": "The field path to count by (list_fields lists them). Not a timestamp."
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Rows to keep, as {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} /\n{\"or\": [...]} of those. The server instructions list the operators for each field\ntype; list_fields lists the paths."
+          },
+          "limit": {
+            "default": 25,
+            "type": "integer",
+            "description": "How many values to return (default 25, at most 100)."
+          }
+        },
+        "required": [
+          "entity",
+          "field"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "create_opportunity",
+      "title": "Create Opportunity",
+      "description": "Create a deal (an opportunity in the pipeline) on an account or a contact.\n\nA deal has no natural dedupe key: two deals on one account with the same title are\noften both real (a renewal each year, a second pilot), so this never matches an\nexisting deal by title or account. Check first with\n``list_opportunities(organization_id=..., query=...)``, and create only when nothing\nthere is the deal you mean; to change one that exists, use ``update_opportunity`` or\n``move_opportunity``. Pass ``idempotency_key`` when a retry or an import must not\ncreate a duplicate: a repeat with the same key returns the deal the first call\ncreated. Without that key every call creates a new deal.\n\nGive an ``organization_id`` (the account), a ``primary_contact_id``, or both; with\nonly a contact, the account is taken from that contact's organization.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "What the deal is (required), e.g. \"Acme 2027 renewal\"."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The account the deal is with."
+          },
+          "primary_contact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's main contact."
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A stage key from this workspace's pipeline (get_pipeline); defaults to the\nfirst open stage. A key the pipeline does not hold is refused, naming the ones\nit does."
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's size, in its currency."
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "An ISO 4217 code, e.g. \"USD\"."
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's own win probability, 0-100; omit to take the stage's\ndefault."
+          },
+          "close_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The target close date (ISO-8601 date)."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where the deal came from (open text, e.g. \"manual\", \"import\")."
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A token of your choosing that makes a retry or an import converge:\na repeat with the same key returns the deal the first call created."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom field values by key; list_fields(entity=\"opportunity\") lists them.\nA repeat with the same idempotency_key keeps the values the deal holds."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting the fields, when the values do not say."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "define_field",
+      "title": "Define Field",
+      "description": "Define a custom field on contacts, organizations or deals, so it can be set, filtered, sorted and shown as a column.\n\nCall it when the user wants to track something list_fields does not have: a fit grade, an\naudience, a headcount. Then write values with ``update_contact``, ``update_organization``\nor ``update_opportunity`` (``fields={key: value}``). Put a fact about a company on the\norganization, once, never on each of its contacts. Defining a key that exists returns it,\nadding any new options and filling an empty description; it never changes the label,\ntype, range or removes an option, which ``update_field`` does.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entity": {
+            "enum": [
+              "contact",
+              "organization",
+              "opportunity"
+            ],
+            "type": "string",
+            "description": "What the field describes."
+          },
+          "key": {
+            "type": "string",
+            "description": "Stable identifier: lowercase letters, digits and underscores (e.g. \"fit\"). Writes,\nfilters and other systems name it, so choose it to last."
+          },
+          "label": {
+            "type": "string",
+            "description": "The name people see, e.g. \"Fit\"."
+          },
+          "type": {
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "date",
+              "select",
+              "multi_select",
+              "list"
+            ],
+            "type": "string",
+            "description": "What the field holds."
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The allowed values, required for select and multi_select. Matched without\nregard to case on write."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the field means and how to fill it, written for the agent that will\ngrade the next thousand records."
+          },
+          "defined_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is defining it: an agent, a run, or a person."
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For a number field, the lowest value it accepts, inclusive (e.g. 1 for a 1-5\nscore)."
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For a number field, the highest value it accepts, inclusive."
+          }
+        },
+        "required": [
+          "entity",
+          "key",
+          "label",
+          "type"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "define_pipeline_stage",
+      "title": "Define Pipeline Stage",
+      "description": "Add a stage to this workspace's deal pipeline.\n\nCall it when the user's sales process has a step the pipeline lacks (get_pipeline\nlists the stages). It only adds: a key the pipeline already holds is returned as\nit is and nothing changes, so to rename, reorder, reweight or change a stage's\noutcome use ``update_pipeline_stage``. The new stage lands last unless\n``position`` says where, with probability 0 and outcome open unless given.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Stable identifier: lowercase letters, digits, underscores (e.g. \"proposal\").\nDeals store it, so choose it to last."
+          },
+          "label": {
+            "type": "string",
+            "description": "Display label (e.g. \"Proposal sent\")."
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Order on the board, 0 first. Omit to add it last."
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Default win probability 0-100 for a deal entering the stage\n(default 0)."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "won",
+                  "lost"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "open / won / lost: whether entering the stage closes a deal (default open)."
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "define_signal_type",
+      "title": "Define Signal Type",
+      "description": "Add a signal type to this workspace's vocabulary: a kind of fact it records about an account.\n\nCall it when the user wants to track a kind of fact the vocabulary lacks\n(list_signal_types lists it); record_signal refuses any type not defined. It only\nadds: a key the vocabulary already holds is returned as it is and nothing changes,\nso to relabel or redescribe a type use ``update_signal_type``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Stable identifier: lowercase letters, digits, underscores (e.g. \"hiring\").\nSignals store it, so choose it to last."
+          },
+          "label": {
+            "type": "string",
+            "description": "Display label (e.g. \"Hiring\")."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the type means, written for the agent deciding whether a\nfact is one."
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "delete_contact",
+      "title": "Delete Contact",
+      "description": "Delete a contact so that no read, listing or lookup returns them again.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. There is no undo. Call it only when the\nuser asks for the person to be removed; to hide a contact they may want back, use\n``archive_contact`` instead, which is reversible, and to join two records of one person use\n``merge_contacts``. Show the user the contact, say it will be deleted, and call this only\nafter they say to proceed. It deletes the contact, any duplicates already merged into it,\ntheir interactions, the signals about them and their external references. A deal that had\nthem as its primary contact reads as having none. Their email is free for a new contact.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact to delete."
+          },
+          "confirm": {
+            "type": "string",
+            "description": "The same contact id again, exactly: a guard against deleting a misread id.\nAnything else deletes nothing."
+          }
+        },
+        "required": [
+          "contact_id",
+          "confirm"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "delete_organization",
+      "title": "Delete Organization",
+      "description": "Delete an organization so that no read, listing or lookup returns it again.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. There is no undo. Call it only when the\nuser asks for the company to be removed; to join two records of one company use\n``merge_organizations``. Show the user the organization, say it will be deleted, and call\nthis only after they say to proceed. It is refused while any contact belongs to the\norganization (delete each with ``delete_contact`` or move them with ``update_contact``),\nand while any deal names it unless ``delete_opportunities`` is true. It deletes the\norganization, its merged duplicates, signals, proof points and external references. Its\ndomain is free for a new organization.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization to delete."
+          },
+          "confirm": {
+            "type": "string",
+            "description": "The same organization id again, exactly: a guard against deleting a misread\nid. Anything else deletes nothing."
+          },
+          "delete_opportunities": {
+            "default": false,
+            "type": "boolean",
+            "description": "Also delete the deals that name it (default false, which\nrefuses while any exist). A deal is the user's own record, so ask first."
+          }
+        },
+        "required": [
+          "organization_id",
+          "confirm"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "find_or_create_contact",
+      "title": "Find Or Create Contact",
+      "description": "Find a contact, or create them when this workspace does not hold them yet.\n\nCall it whenever a person comes up that you may record or act on, with everything you\nknow about them in one call. It matches by external reference, then email, then name\nwithin the same organization, and a match fills only the values the contact lacks. Never\ncreate a name-only contact and call again to add more: to change a value the contact\nholds use ``update_contact``, and to join two records of one person ``merge_contacts``.\nFor a list of more than a few people use ``import_contacts``. Linking a person to a\ndiscovered lookalike organization promotes it to active.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The person's full name. Optional when email is given: a new contact is then\nnamed from the address (jane.doe@ becomes \"Jane Doe\"). Pass name or email."
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their email address; the strongest match key after an external reference."
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their phone number."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their role at their organization, e.g. \"VP Sales\"."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The organization they work at, by id."
+          },
+          "organization_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The organization's name when you hold no id: it is found or\ncreated, and the contact is linked to it."
+          },
+          "lead_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How they came to you (open text, e.g. \"referral\", \"inbound\", \"event\")."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where you learned of them (open text, e.g. \"research\", \"manual\", \"import\")."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their stage: sourced, enriched, contacted, engaged, or a stage of\nyour own (default \"sourced\")."
+          },
+          "email_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "valid",
+                  "invalid",
+                  "risky",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the address can receive mail. Omit when it has not been checked."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom field values by key, e.g. {\"fit\": \"strong\"}; list_fields lists the\nkeys. A match keeps the values it holds and takes only the keys it lacks."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting these fields: an agent, a run, or a person."
+          },
+          "external_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What other systems call this record, as opaque URIs (e.g.\n\"crm://people/123\", or the source's own record URL). One a record here already\nholds is the match, ahead of every other key; one held by another record is\nrefused as a conflict, never moved."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "find_or_create_organization",
+      "title": "Find Or Create Organization",
+      "description": "Find an organization, or create it when this workspace does not hold it yet.\n\nCall it whenever a company comes up that you may record or act on: it is how you get an\norganization's id without making a duplicate. It matches by external reference, then\ndomain, then name, and a match fills only the values the organization lacks, never\noverwriting one, so call it once with everything you know. To change a value it already\nholds use ``update_organization``; for a list of more than a few companies use\n``import_organizations``. Matching a discovered lookalike promotes it to active.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The company's name (required)."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its web domain, e.g. \"acme.com\"; a URL is reduced to its domain. The strongest\nmatch key after an external reference."
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its website URL."
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its industry in your own words (open text, e.g. \"Logistics software\")."
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where it is based or operates (open text, e.g. \"EMEA\")."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where you learned of it (open text, e.g. \"research\", \"manual\", \"import\")."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom field values by key, e.g. {\"fit\": \"strong\"}; list_fields lists the\nkeys. A match keeps the values it holds and takes only the keys it lacks."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting these fields: an agent, a run, or a person."
+          },
+          "external_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What other systems call this record, as opaque URIs (e.g.\n\"crm://people/123\", or the source's own record URL). One a record here already\nholds is the match, ahead of every other key; one held by another record is\nrefused as a conflict, never moved."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "get_contact",
+      "title": "Get Contact",
+      "description": "Read one contact in full: fields, dossier, counts, external references and the 5 newest interactions.\n\nCall it when you hold a contact's id and need what is known about them before you act:\nbefore writing to them, before a call, or to answer a question about them. The 5 newest\ninteractions come without their bodies; ``list_interactions(contact_id=...)`` pages\nthrough all of them in full. To find a contact whose id you do not hold, use\n``list_contacts(query=...)``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact's id (ct_...)."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "get_opportunity",
+      "title": "Get Opportunity",
+      "description": "Read one deal in full: fields, dossier, counts and the 5 newest interactions logged against it.\n\nCall it when you hold a deal's id and need where it stands before you act or answer. The\n5 newest interactions come without their bodies; ``list_interactions(opportunity_id=...)``\npages through all of them in full. To find a deal whose id you do not hold, use\n``list_opportunities(query=...)``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "The deal's id (op_...)."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "get_organization",
+      "title": "Get Organization",
+      "description": "Read one organization in full: fields, dossier, counts, external references and the 5 newest interactions.\n\nCall it when you hold an organization's id and need what is known about the company\nbefore you act or answer. The 5 newest interactions, with anyone there, come without\ntheir bodies; ``list_interactions(organization_id=...)`` pages through all of them, and\n``list_contacts(organization_id=...)`` lists its people. To find an organization whose id\nyou do not hold, use ``list_organizations(query=...)``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization's id (org_...)."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "get_pipeline",
+      "title": "Get Pipeline",
+      "description": "Read this workspace's deal pipeline: its stages in order, the deals in each, and the totals.\n\nCall it before moving or creating a deal, since ``move_opportunity`` and\n``create_opportunity`` take a stage key from this list and refuse any other, and to\nanswer how the pipeline stands (how many deals per stage, their value, how many won\nor lost). Each stage carries its key, label, default win probability, outcome (open,\nwon or lost) and its deals' count, value and weighted value. To read the deals\nthemselves, use ``list_opportunities(stage=...)``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Count one account's deals only. Omit for the whole workspace."
+          },
+          "include_retired": {
+            "default": false,
+            "type": "boolean",
+            "description": "Also list retired stages, after the live ones, each with its\nreplacement. No deal enters a retired stage; the totals count its deals either way."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "get_proof_point",
+      "title": "Get Proof Point",
+      "description": "Read one proof point: its claim, metric, timeframe, verification and naming permissions.\n\nCall it when you hold a proof point's id and need to know whether it may be cited: only a\nverified one is evidence, and its scope_notes say what may be named. To find proof points\nuse ``list_proof_points``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "proof_point_id": {
+            "type": "string",
+            "description": "The proof point's id (pp_...)."
+          }
+        },
+        "required": [
+          "proof_point_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "get_signal",
+      "title": "Get Signal",
+      "description": "Read one signal: its claim, the verbatim quote, the source URL, its dates and whom it is evidence for.\n\nCall it when you hold a signal's id, such as one cited in a message, and need to check\nwhat it says or whether it still stands (a withdrawn one says so). To find an account's\nsignals use ``list_signals(organization_id=...)``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "description": "The signal's id (sg_...)."
+          }
+        },
+        "required": [
+          "signal_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "import_contacts",
+      "title": "Import Contacts",
+      "description": "Find or create many contacts in one call, from a list loaded from a file or another source.\n\nCall it for a list of more than a few people; for one, use ``find_or_create_contact``.\nEach row is matched and filled the way that tool does it, so importing the same list again\nsaves nothing new. A row's ``organization_domain`` names its organization, which is found\nor created. A row that fails is skipped and reported with its reason and index; every\nother row is saved. A matched row whose value differs from the one held is reported under\n``kept``. At most 500 rows per call; split a longer list.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "items": {
+              "additionalProperties": false,
+              "description": "One person to find or create. Values are text; an empty string counts as absent.",
+              "properties": {
+                "name": {
+                  "description": "The person's full name.",
+                  "type": "string"
+                },
+                "email": {
+                  "description": "Their email address.",
+                  "type": "string"
+                },
+                "phone": {
+                  "description": "Their phone number.",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Their role, e.g. VP Sales.",
+                  "type": "string"
+                },
+                "organization_id": {
+                  "description": "The organization they work at, by id.",
+                  "type": "string"
+                },
+                "organization_name": {
+                  "description": "Their organization's name, found or created.",
+                  "type": "string"
+                },
+                "organization_domain": {
+                  "description": "Their organization's domain, found or created.",
+                  "type": "string"
+                },
+                "lead_source": {
+                  "description": "How they came to you (open text, e.g. referral).",
+                  "type": "string"
+                },
+                "status": {
+                  "description": "Their stage: sourced, enriched, contacted, engaged, or your own.",
+                  "type": "string"
+                },
+                "email_status": {
+                  "description": "Whether the address can receive mail: valid, invalid, risky or unknown.",
+                  "type": "string"
+                },
+                "fields": {
+                  "additionalProperties": true,
+                  "description": "Custom field values by key; list_fields lists the keys. A match keeps the values it holds.",
+                  "type": "object"
+                },
+                "external_refs": {
+                  "description": "What other systems call this record, as opaque URIs. One a record here holds is the match, ahead of every other key.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "description": "Up to 500 people, one object per row. A row needs a name, an email, or an\nexternal reference a record here holds. Values are text; an empty string counts\nas absent."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "import",
+            "description": "Where the list came from, recorded on each contact and organization it\ncreates (default \"import\")."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting the rows' custom fields: an agent, a run, or a person."
+          }
+        },
+        "required": [
+          "rows"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "import_organizations",
+      "title": "Import Organizations",
+      "description": "Find or create many organizations in one call, from a list loaded from a file or another source.\n\nCall it for a list of more than a few companies; for one, use\n``find_or_create_organization``. Each row is matched and filled the way that tool does it,\nso importing the same list again saves nothing new and never overwrites a later edit. A\nrow that fails is skipped and reported with its reason and index; every other row is\nsaved. A matched row whose value differs from the one held is reported under ``kept``.\nAt most 500 rows per call; split a longer list.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "items": {
+              "additionalProperties": false,
+              "description": "One company to find or create. Values are text; an empty string counts as absent.",
+              "properties": {
+                "name": {
+                  "description": "The company's name; else its domain.",
+                  "type": "string"
+                },
+                "domain": {
+                  "description": "Its web domain, e.g. acme.com.",
+                  "type": "string"
+                },
+                "website": {
+                  "description": "Its website URL.",
+                  "type": "string"
+                },
+                "industry": {
+                  "description": "Its industry (open text).",
+                  "type": "string"
+                },
+                "region": {
+                  "description": "Where it is based (open text).",
+                  "type": "string"
+                },
+                "fields": {
+                  "additionalProperties": true,
+                  "description": "Custom field values by key; list_fields lists the keys. A match keeps the values it holds.",
+                  "type": "object"
+                },
+                "external_refs": {
+                  "description": "What other systems call this record, as opaque URIs. One a record here holds is the match, ahead of every other key.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "description": "Up to 500 companies, one object per row. A row needs a name, a domain, or an\nexternal reference a record here holds. Values are text; an empty string counts\nas absent."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "import",
+            "description": "Where the list came from, recorded on each organization it creates (default\n\"import\")."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting the rows' custom fields: an agent, a run, or a person."
+          }
+        },
+        "required": [
+          "rows"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "link_similar_organizations",
+      "title": "Link Similar Organizations",
+      "description": "Save the results of a similar-companies lookup as lookalikes of one organization.\n\nCall it after a similar-companies search (this server runs none itself) to keep what it\nfound: each company is found or created by its domain and linked to the organization with\nits similarity score. A company new to this workspace is saved as discovered and stays out\nof the default organization views until ``promote_organization``; one already held is\nlinked and otherwise left as it is. A company with no domain is skipped. Linking the same\nresults again changes nothing. Read the lookalikes with ``list_similar_organizations``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization the lookalikes resemble."
+          },
+          "companies": {
+            "items": {
+              "additionalProperties": false,
+              "description": "One company a similar-companies lookup returned.",
+              "properties": {
+                "domain": {
+                  "description": "Its web domain, the key it is found or created by.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Its name; else its domain.",
+                  "type": "string"
+                },
+                "industry": {
+                  "description": "Its industry (open text).",
+                  "type": "string"
+                },
+                "employee_range": {
+                  "description": "Its headcount band, e.g. 51-200.",
+                  "type": "string"
+                },
+                "revenue_range": {
+                  "description": "Its revenue band.",
+                  "type": "string"
+                },
+                "headquarters": {
+                  "description": "Where it is headquartered.",
+                  "type": "string"
+                },
+                "similarity": {
+                  "description": "How similar it scored, 0 to 1.",
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "domain"
+              ],
+              "type": "object"
+            },
+            "type": "array",
+            "description": "The lookup's results, one object per company."
+          }
+        },
+        "required": [
+          "organization_id",
+          "companies"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_contacts",
+      "title": "List Contacts",
+      "description": "List contacts: find people by name or email, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find a contact whose id you do not hold (``query``), or to read the people\nthat match: by organization, stage, lead source, or a ``filter`` on any field, including\ntheir organization's (``organization.fit``) and the rollups ``signals.active``,\n``interactions.count`` and ``interactions.last_at``. Pass ``columns`` when reading more\nthan a page, and follow ``next_cursor`` for the rest. To learn how many fall in each\ngroup, use ``count_records`` instead of walking the list; to read one contact in full,\n``get_contact``. Archived contacts are left out unless ``include_archived``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Free text matched against name and email: split into words, each of which must\nappear in one of them, in any order (\"matt calloway\" finds \"Matthew Calloway\")."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only the people at this organization."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only contacts at this stage."
+          },
+          "lead_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only contacts with this lead source."
+          },
+          "include_archived": {
+            "default": false,
+            "type": "boolean",
+            "description": "Also list archived contacts (default false). Filter on\narchived_at to list only them."
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Rows to keep, as {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} /\n{\"or\": [...]} of those. The server instructions list the operators for each field\ntype; list_fields lists the paths."
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A field path to order by, \"-\" first for descending (e.g. \"-created_at\"). Rows\nwith no value sort last. Default: newest first."
+          },
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only these paths per row (plus id and uri), e.g. [\"name\", \"title\"].\nWithout it each row is the whole contact but its dossier."
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "description": "Page size (default 50, at most 200)."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The next_cursor of the previous page. Pass the same query, filter, sort and\ncolumns with it."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_fields",
+      "title": "List Fields",
+      "description": "List the fields of contacts, organizations and deals: the core ones and this workspace's custom ones.\n\nRead it before writing ``fields={...}``, filtering, sorting or counting, to learn which\nkeys exist, their types and options, and what each one means. Every key it lists but\ndossier is a path the list tools and count_records take, and a contact also reaches its\norganization's as ``organization.<key>``. When the field you need is missing and you\ncannot add it with ``define_field``, tell the user which field is missing rather than\nstoring the value in a dossier or another field.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "contact",
+                  "organization",
+                  "opportunity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only this entity's fields. Omit for all three."
+          },
+          "include_retired": {
+            "default": false,
+            "type": "boolean",
+            "description": "Also list retired custom fields, each with its replacement. A retired\nkey cannot be written."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_interactions",
+      "title": "List Interactions",
+      "description": "List the interaction history of one contact, organization or deal, newest first, a page at a time.\n\nCall it to read what happened with someone before you reach out again, to answer\n\"when did we last talk to them\", or to page past the 5 newest interactions that\nget_contact, get_organization and get_opportunity already carry. Pass exactly one\nof the three ids. Each interaction comes with its full body. To record a new touch\nuse ``log_interaction``; to list an organization's people use\n``list_contacts(organization_id=...)``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The contact whose interactions to list."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The organization whose interactions to list: every touch with\nanyone who worked there when it happened."
+          },
+          "opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal whose interactions to list: the touches logged\nagainst it."
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only this kind of interaction, matched exactly (e.g. \"meeting\")."
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "description": "Page size (default 50, at most 200)."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The next_cursor of the previous page, with the same id and kind."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_opportunities",
+      "title": "List Opportunities",
+      "description": "List deals: find them by title or account, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find a deal whose id you do not hold (``query``), to check for an existing\ndeal before ``create_opportunity``, or to read the deals that match: by account, primary\ncontact, stage, outcome, or a ``filter`` on any field, including the account's\n(``organization.industry``), the primary contact's (``contact.title``) and the rollups\n``interactions.count`` and ``interactions.last_at``. Only open deals are listed unless\nstage, outcome or a filter on either says otherwise. For per-stage totals use\n``get_pipeline``; to read one deal in full, ``get_opportunity``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Free text matched against the deal's title and its account's name: split into\nwords, each of which must appear in one of them."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only this account's deals."
+          },
+          "primary_contact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only deals with this primary contact."
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only deals in this stage (get_pipeline lists the keys)."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "won",
+                  "lost"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only deals with this outcome."
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Rows to keep, as {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} /\n{\"or\": [...]} of those. The server instructions list the operators for each field\ntype; list_fields lists the paths."
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A field path to order by, \"-\" first for descending (e.g. \"-weighted_value\",\n\"close_date\"). Rows with no value sort last. Default: newest first."
+          },
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only these paths per row (plus id and uri), e.g. [\"title\", \"stage\",\n\"value\", \"organization.name\"]. Without it each row is the whole deal but its\ndossier."
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "description": "Page size (default 50, at most 200)."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The next_cursor of the previous page. Pass the same query, filter, sort and\ncolumns with it."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_organizations",
+      "title": "List Organizations",
+      "description": "List organizations: find companies by name or domain, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find an organization whose id you do not hold (``query``), or to read the\ncompanies that match: by industry, region, or a ``filter`` on any field, including the\nrollups ``contacts.count`` and ``signals.active``. Pass ``columns`` when reading more than\na page, and follow ``next_cursor`` for the rest. To learn how many fall in each group, use\n``count_records``; to read one organization in full, ``get_organization``. Only active\norganizations are listed unless status or a filter asks for discovered lookalikes, and\narchived ones only with ``include_archived``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Free text matched against name and domain: split into words, each of which must\nappear in one of them, in any order."
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only organizations in this industry, matched exactly."
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only organizations in this region, matched exactly."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "discovered"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Which organizations to list (default active)."
+          },
+          "include_archived": {
+            "default": false,
+            "type": "boolean",
+            "description": "Also list archived organizations (default false). Filter on\narchived_at to list only them."
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Rows to keep, as {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} /\n{\"or\": [...]} of those. The server instructions list the operators for each field\ntype; list_fields lists the paths."
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A field path to order by, \"-\" first for descending (e.g. \"-created_at\"). Rows\nwith no value sort last. Default: newest first."
+          },
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only these paths per row (plus id and uri), e.g. [\"name\", \"fit\"].\nWithout it each row is the whole organization but its dossier."
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "description": "Page size (default 50, at most 200)."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The next_cursor of the previous page. Pass the same query, filter, sort and\ncolumns with it."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_proof_points",
+      "title": "List Proof Points",
+      "description": "List recorded proof points, newest first. Read it before citing a number about our own work.\n\nCall it before any outcome number goes into copy, to see what is recorded and whether it\nis attested. Nothing is hidden by default: an unverified or placeholder claim is what you\nmost need to see. Filter to fabricated-placeholder for the list of case studies still to\nobtain.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only this client's proof points."
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "enum": [
+                  "verified",
+                  "unverified",
+                  "fabricated-placeholder"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only proof points in this state."
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "description": "Page size (default 50, at most 200)."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The next_cursor of the previous page."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_signal_types",
+      "title": "List Signal Types",
+      "description": "List this workspace's signal types: the kinds of fact it records about an account.\n\nRead it before recording a signal: ``record_signal`` takes a key from this list and\nrefuses any other. Each type carries its label, what it means, and how many active\nsignals carry it. A workspace starts with none; ``define_signal_type`` adds one.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "include_retired": {
+            "default": false,
+            "type": "boolean",
+            "description": "Also list retired types, each with its replacement. No new signal\ntakes a retired type; the signals that carry one keep it."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_signals",
+      "title": "List Signals",
+      "description": "List recorded signals, newest first, or the ones changed since a mark. Read it before researching an account again.\n\nCall it before researching an account (the work may be done), before citing a fact, or to\nfollow new and changed signals. Withdrawn signals are left out unless status asks for\nthem. An empty result for an account already researched means nothing qualified, which is\nan answer. To follow changes, pass ``changed_since``: \"\" the first time, then the\nnext_cursor the last call returned; signals then come oldest change first (created,\nedited, withdrawn, or whom they are evidence for), a change shows once it is a few\nminutes old, and the same signal can come back more than once.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only this account's signals."
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only signals about this person."
+          },
+          "signal_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only signals of this type."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "withdrawn",
+                  "any"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Which signals to list (default active)."
+          },
+          "evidence_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "\"workspace\" (evidence for this workspace's own pipeline), an organization\nid (evidence for that organization), or \"unstated\" (no party)."
+          },
+          "changed_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A change mark: \"\" to start, then the last call's next_cursor."
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "description": "Page size (default 50, at most 200)."
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The next_cursor of the previous page (not with changed_since)."
+          }
+        }
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_similar_organizations",
+      "title": "List Similar Organizations",
+      "description": "List an organization's lookalikes, most similar first, with each one's score and when it was found.\n\nCall it to review the companies a similar-companies lookup linked to an organization,\nbefore promoting the ones worth working with ``promote_organization``. It lists\ndiscovered and active lookalikes alike, and leaves archived ones out until\n``archive_organization(archived=false)`` brings them back. To save new lookalikes use\n``link_similar_organizations``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization whose lookalikes to list."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "log_interaction",
+      "title": "Log Interaction",
+      "description": "Record a touch with a contact: a meeting, email, call, note or piece of research.\n\nCall it after anything happens with a person that the next agent should know: a message\nsent or received, a call, a meeting, or research done on them. It is also filed under the\norganization the contact works at now, and under a deal when you give ``opportunity_id``.\nGive a direction on an email, call or meeting so the contact's stage advances (outbound to\ncontacted, inbound to engaged). For lasting research about a person or company rather\nthan one event, write the dossier with ``update_contact`` or ``update_organization``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact it was with."
+          },
+          "kind": {
+            "type": "string",
+            "description": "What kind of touch: meeting, email, call, note or research, or your own word."
+          },
+          "summary": {
+            "type": "string",
+            "description": "One line saying what happened."
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Longer markdown detail: notes, context, excerpts."
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inbound",
+                  "outbound"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "For an email, call or meeting, whether it came from them or went to them.\nOmit it for a note or research. A touch with none does not advance the stage."
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When it happened (ISO-8601); defaults to now."
+          },
+          "follow_up_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When to follow up with the contact (ISO-8601)."
+          },
+          "opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal this touch is part of, so it shows in that deal's history."
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A token of your choosing that makes a retry safe: a repeat with the\nsame key for the same contact returns the interaction the first call logged.\nWithout it every call logs a new one."
+          }
+        },
+        "required": [
+          "contact_id",
+          "kind",
+          "summary"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "merge_contacts",
+      "title": "Merge Contacts",
+      "description": "Merge a duplicate contact into the one to keep, so two records of one person become one.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will\nbe kept (``target_id``) and which merged away (``source_id``), and call this only after\nthey say to proceed; never pick the duplicate on your own judgment. The kept contact takes\nevery interaction and external reference of the other, and its empty fields are filled\nfrom it; a value it holds is never overwritten. The merged-away record is archived, not\ndeleted (``archive_contact(archived=false)`` restores it as a record of its own). Use this only for duplicates that already exist (``find_or_create_contact``\navoids making them), and never rename a duplicate instead: its interactions would stay on\nthe wrong record.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "description": "The contact to keep."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "The duplicate to merge into it and archive."
+          }
+        },
+        "required": [
+          "target_id",
+          "source_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "merge_organizations",
+      "title": "Merge Organizations",
+      "description": "Merge a duplicate organization into the one to keep, so two records of one company become one.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will\nbe kept (``target_id``) and which merged away (``source_id``), and call this only after\nthey say to proceed. The kept organization takes every contact, interaction, deal,\nexternal reference and lookalike of the other, and its empty fields are filled from it;\na value it holds is never overwritten. The merged-away record is archived, not deleted.\n``find_or_create_organization`` already prevents new duplicates by domain and name, so use\nthis for two that exist, such as two domains that turn out to be one company. Never\nrename a duplicate instead: its contacts would stay on the wrong record.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "description": "The organization to keep."
+          },
+          "source_id": {
+            "type": "string",
+            "description": "The duplicate to merge into it and archive."
+          }
+        },
+        "required": [
+          "target_id",
+          "source_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "move_opportunity",
+      "title": "Move Opportunity",
+      "description": "Move a deal to another stage of this workspace's pipeline.\n\nCall it when a deal advances, stalls or closes; it is the only way a deal's stage\nchanges. Entering a won or lost stage stamps the close time and an open stage clears it,\nand the deal takes the stage's default probability unless ``probability`` gives its own.\nA stage the pipeline does not hold is refused, naming the ones it does (get_pipeline lists\nthem). To change anything else about the deal use ``update_opportunity``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "The deal to move."
+          },
+          "stage": {
+            "type": "string",
+            "description": "The key of the stage to move it to."
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's own win probability in the new stage, 0-100; omit to take the\nstage's default."
+          }
+        },
+        "required": [
+          "opportunity_id",
+          "stage"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "promote_organization",
+      "title": "Promote Organization",
+      "description": "Promote a discovered lookalike to active, so it appears in the default organization views.\n\nCall it when the user decides to work a company that ``link_similar_organizations`` saved\nas discovered. An organization already active is left as it is. Naming a lookalike in\n``find_or_create_organization``, or linking a contact to it, promotes it too, so this is\nfor the decision on its own.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization to promote."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "record_proof_point",
+      "title": "Record Proof Point",
+      "description": "Record a citable claim about our own work, with whether anyone has attested it.\n\nCall it when a number or outcome about work this workspace did may be cited in copy: a\ncase-study result, a customer outcome. It starts unverified unless ``attested_by`` names\nwho stands behind it as verified; a claim is evidence only once attested. For a number\ninvented so copy can be drafted, record it as ``fabricated-placeholder``: marking it is\nwhat stops it being read as evidence later. For a fact about another company use\n``record_signal``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "claim": {
+            "type": "string",
+            "description": "The citable sentence."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The client, when they are in the CRM."
+          },
+          "engagement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A label for the client or engagement when there is no organization record."
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The number, as it would be cited (e.g. \"42% faster onboarding\")."
+          },
+          "timeframe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The period it was achieved over."
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "enum": [
+                  "verified",
+                  "unverified",
+                  "fabricated-placeholder"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether it is attested (default unverified). verified needs attested_by."
+          },
+          "attested_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who stands behind it. Required to record it as verified."
+          },
+          "scope_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Naming permissions: NDA, attribution, which figures may ship."
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A token of your choosing that makes a retry safe: a repeat with the\nsame key returns the proof point the first call recorded."
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "record_signal",
+      "title": "Record Signal",
+      "description": "Record one fact about an organization, with the source's own words that prove it.\n\nCall it when you have read a real source saying something about an account that anyone\nciting it could check: the ``claim`` is your sentence, the ``evidence_quote`` is theirs,\nverbatim, and the ``source_url`` is where a reviewer opens it. Finding nothing worth\nrecording is a good outcome: record no signal rather than a weak one. For a claim about\nour own work use ``record_proof_point``; for research prose, the dossier. Recording the\nsame source and type for the account again returns the signal already held; if that key\nholds a different fact, yours is not stored and next_step says so.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The account the fact is about."
+          },
+          "claim": {
+            "type": "string",
+            "description": "One plain sentence, readable without opening the source. It keeps the source's\nhedges: if the quote says \"alleged\", \"reportedly\" or \"suspected\", the claim says so\nand names who says it, or it is refused."
+          },
+          "evidence_quote": {
+            "type": "string",
+            "description": "The source's words that support the claim, verbatim."
+          },
+          "source_url": {
+            "type": "string",
+            "description": "The http(s) URL where it was read."
+          },
+          "signal_type": {
+            "type": "string",
+            "description": "A key of this workspace's signal vocabulary (list_signal_types). Any other\nkey is refused, naming the ones defined."
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The person, when the fact is about one."
+          },
+          "source_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The source's own date (ISO-8601 date), when it carries one: for an\narticle, when it was published."
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The date the event happened (ISO-8601 date), as the evidence states it,\noften earlier than source_date. A month-only statement (\"in March 2026\") is the 1st\nof that month. Omit it when the source states none; never copy source_date into it.\nAn announced plan takes the date of the announcement, never the date the plan is\nfor. Refused when after today (UTC) or after source_date."
+          },
+          "found_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Which run, agent or person found it."
+          },
+          "evidence_for": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whom the fact is evidence for: \"workspace\" when it says the organization\nmight buy from this workspace, and/or the id of each organization you researched it\nfor (a client or prospect whose outreach will cite it). At most 10. Adds to any\nalready recorded."
+          }
+        },
+        "required": [
+          "organization_id",
+          "claim",
+          "evidence_quote",
+          "source_url",
+          "signal_type"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "resolve_external_refs",
+      "title": "Resolve External Refs",
+      "description": "Say which of a batch of other systems' references this workspace already holds, and on which records.\n\nA reference is what another system calls a record (``crm://companies/123``). Call it\nbefore pulling records from a source: what comes back under ``found`` is already here,\nand only what is ``missing`` is new, so you fetch and import only those, giving each row\nits reference. One call answers the whole batch. It finds by reference only; to find a\nrecord by name use ``list_contacts`` or ``list_organizations`` with ``query``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "Up to 500 references (opaque URIs). A malformed one is refused, not reported\nmissing."
+          }
+        },
+        "required": [
+          "refs"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_contact",
+      "title": "Update Contact",
+      "description": "Change a contact you hold: their fields, custom fields, external references or research dossier.\n\nCall it to correct or add to a contact once you have their id. Only the arguments you\npass change; one you omit keeps its value, and a core field cannot be cleared here. To\nrecord that you spoke with them use ``log_interaction`` instead: setting status records no\ntouch. To join a duplicate use ``merge_contacts``; for someone you may not hold yet,\n``find_or_create_contact``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact to change."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their full name. Omit to keep it."
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their email address. Changing it clears email_status unless you grade the new\naddress in the same call."
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their phone number. Omit to keep it."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their role at their organization. Omit to keep it."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The organization they now work at. Interactions already logged stay\nwith the organization they were logged under."
+          },
+          "lead_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How they came to you (open text). Omit to keep it."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Their stage: sourced, enriched, contacted, engaged, or a stage of\nyour own. Setting it records no touch; log_interaction does."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where you learned of them (open text). Omit to keep it."
+          },
+          "email_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "valid",
+                  "invalid",
+                  "risky",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Whether the address can receive mail."
+          },
+          "email_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When the address was checked (ISO-8601); defaults to now."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom field values by key. A key given replaces that key's value; null (or \"\"\nfor a text field) removes it; keys not given are kept. To keep the reason with a\nvalue, pass {\"value\": ..., \"why\": \"...\"}. Keys must be defined (list_fields)."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting these fields: an agent, a run, or a person."
+          },
+          "add_external_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "References (opaque URIs) to attach. One another record holds is\nrefused as a conflict, never moved."
+          },
+          "remove_external_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "References this contact holds to detach, such as one attached to\nthe wrong person."
+          },
+          "dossier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Replace the research dossier with this markdown; \"\" clears it. The dossier is\nfor what is read, not filtered: anything you would filter or sort on is a field."
+          },
+          "dossier_append": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Add this markdown after the current dossier, with a blank line between;\na concurrent writer's addition is kept. Refused when the dossier would pass its\nmaximum length. Not with dossier."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_field",
+      "title": "Update Field",
+      "description": "Retire, restore or edit a custom field: its label, description, unused options, range, or whether it opens as a column.\n\nCall it when a field is replaced by another (retire it, naming the replacement), when a\nretired field is needed again (restore it), or to rename, redescribe or narrow one. A\nretired field leaves list_fields, listings and pickers, and a write, filter, sort or\ncolumn naming it is refused with its replacement named; its values stay on the records\nand its key stays taken. To add a field use ``define_field``. Repeating a retire keeps the\nfirst retired_at.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entity": {
+            "enum": [
+              "contact",
+              "organization",
+              "opportunity"
+            ],
+            "type": "string",
+            "description": "The field's entity."
+          },
+          "key": {
+            "type": "string",
+            "description": "The field's key."
+          },
+          "retired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "true retires the field; false restores it and clears replaced_by."
+          },
+          "replaced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The live field that takes its place: a key on the same entity, or\n\"organization.<key>\" / \"contact.<key>\". Only on a retired field."
+          },
+          "default_column": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "true opens the live field as a column in its lists; false stops that."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The name people see. Its key never changes."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the field means and how to fill it. \"\" clears it."
+          },
+          "remove_options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Options of a select or multi_select field to drop. Refused while any\nrecord holds one, and when none would remain."
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The lowest value a number field accepts, inclusive. Refused while a record\nholds a lower value."
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The highest value a number field accepts, inclusive. Refused while a record\nholds a higher value."
+          },
+          "clear_bounds": {
+            "default": false,
+            "type": "boolean",
+            "description": "true lifts the field's range before any minimum or maximum given applies,\nso a side not given becomes unbounded."
+          }
+        },
+        "required": [
+          "entity",
+          "key"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_opportunity",
+      "title": "Update Opportunity",
+      "description": "Change a deal you hold: its title, value, probability, close date, primary contact, custom fields or research dossier.\n\nCall it to correct or add to a deal once you have its id. Only the arguments you pass\nchange; one you omit keeps its value, and a core field cannot be cleared here. It never\nchanges the stage: ``move_opportunity`` does, with its side effects. To create a deal use\n``create_opportunity``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "opportunity_id": {
+            "type": "string",
+            "description": "The deal to change."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the deal is. Omit to keep it."
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's size, in its currency. Omit to keep it."
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "An ISO 4217 code, e.g. \"USD\". Omit to keep it."
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's own win probability, 0-100, kept until its next stage move."
+          },
+          "close_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The target or actual close date (ISO-8601 date)."
+          },
+          "primary_contact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The deal's main contact. Omit to keep them."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where the deal came from (open text). Omit to keep it."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom field values by key. A key given replaces that key's value; null (or \"\"\nfor a text field) removes it; keys not given are kept. To keep the reason with a\nvalue, pass {\"value\": ..., \"why\": \"...\"}. Keys must be defined (list_fields)."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting these fields, when the values do not say."
+          },
+          "dossier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Replace the research dossier with this markdown; \"\" clears it. The dossier is\nfor what is read, not filtered: anything you would filter or sort on is a field."
+          },
+          "dossier_append": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Add this markdown after the current dossier, with a blank line between;\na concurrent writer's addition is kept. Refused when the dossier would pass its\nmaximum length. Not with dossier."
+          }
+        },
+        "required": [
+          "opportunity_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_organization",
+      "title": "Update Organization",
+      "description": "Change an organization you hold: its fields, custom fields, external references or research dossier.\n\nCall it to correct or add to an organization once you have its id. Only the arguments you\npass change; one you omit keeps its value, and a core field cannot be cleared here.\nEditing a discovered lookalike leaves it discovered: ``promote_organization`` is the\ndecision to work it. For a company you may not hold yet use\n``find_or_create_organization``; to join a duplicate, ``merge_organizations``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "The organization to change."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its name. Omit to keep it."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its web domain. Omit to keep it."
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its website URL. Omit to keep it."
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its industry (open text). Omit to keep it."
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where it is based or operates (open text). Omit to keep it."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where you learned of it (open text). Omit to keep it."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Custom field values by key. A key given replaces that key's value; null (or \"\"\nfor a text field) removes it; keys not given are kept. To keep the reason with a\nvalue, pass {\"value\": ..., \"why\": \"...\"}. Keys must be defined (list_fields)."
+          },
+          "fields_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Who is setting these fields: an agent, a run, or a person."
+          },
+          "add_external_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "References (opaque URIs) to attach. One another record holds is\nrefused as a conflict, never moved."
+          },
+          "remove_external_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "References this organization holds to detach, such as one\nattached to the wrong company."
+          },
+          "dossier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Replace the research dossier with this markdown; \"\" clears it. The dossier is\nfor what is read, not filtered: anything you would filter or sort on is a field."
+          },
+          "dossier_append": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Add this markdown after the current dossier, with a blank line between;\na concurrent writer's addition is kept. Refused when the dossier would pass its\nmaximum length. Not with dossier."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_pipeline_stage",
+      "title": "Update Pipeline Stage",
+      "description": "Retire, restore or change a stage of this workspace's deal pipeline: its label, order, default probability or outcome.\n\nCall it to rename a stage, move its column, reweight it, make it close deals as won\nor lost, retire a stage the sales process no longer uses (naming the stage that\nreplaces it), or restore a retired one. Only the arguments given change; the key\nnever does, so deals in the stage stay in it. A deal in the stage takes the new\ndefault probability unless it has its own, and a stage that starts or stops closing\ndeals moves their close time with it. A retired stage leaves get_pipeline and the\nboard, and creating or moving a deal into it is refused with its replacement named;\nits deals keep it, with its label and outcome, and its key stays taken. Retiring is\nrefused while open deals sit in the stage; a won or lost stage retires with its\ndeals. The pipeline's only open stage cannot stop being open or retire. To add a\nstage use ``define_pipeline_stage``; to move one deal use ``move_opportunity``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The stage's key (get_pipeline lists them; include_retired=true for retired ones)."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New display label. Omit to keep it."
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New order on the board, 0 first; the other stages shift. Omit to keep it."
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New default win probability 0-100. Omit to keep it."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "won",
+                  "lost"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "open / won / lost. Omit to keep it."
+          },
+          "retired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "true retires the stage; false restores it, last on the board unless\nposition is given, and clears replaced_by."
+          },
+          "replaced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The key of the live stage that takes its place. Only on a retired stage."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_signal",
+      "title": "Update Signal",
+      "description": "Change whom a recorded signal is evidence for: add a purpose, or remove one filed by mistake.\n\nA signal is a fact about its organization; whom it is evidence for is why it was\nrecorded. \"workspace\" means the organization might buy from this workspace; an\norganization id means the fact was researched for that organization (a client or\nprospect whose outreach will cite it). Call this when a fact you already recorded\nturns out to serve another purpose too, or was filed under the wrong one. The\nsignal's claim, quote, dates and status never change here; to say the fact itself\nis wrong, use ``withdraw_signal``. A withdrawn signal is refused.\n\nAdding a party already recorded, or removing one not recorded, changes nothing; adding\none that was removed restores it.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "description": "The signal."
+          },
+          "add_evidence_for": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parties to add: \"workspace\" and/or organization ids, at most 10."
+          },
+          "remove_evidence_for": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Parties to remove, the same way. Not a party also in\nadd_evidence_for."
+          },
+          "added_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provenance for what this adds: which run, agent, or person decided it."
+          }
+        },
+        "required": [
+          "signal_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "update_signal_type",
+      "title": "Update Signal Type",
+      "description": "Retire, restore or change a signal type: its label or description.\n\nCall it to rename a type or sharpen what it means, so the next agent files facts\nunder it correctly; to retire a type the workspace no longer records (naming the type\nthat replaces it); or to restore a retired one. Only the arguments given change; the\nkey never does, so every signal of the type keeps it and none is touched. A retired\ntype leaves list_signal_types, and record_signal refuses it with its replacement\nnamed; the signals that carry it keep it, list_signals still filters on it, and its\nkey stays taken. A type retires while signals carry it. To add a type use\n``define_signal_type``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The signal type's key (list_signal_types lists them; include_retired=true for\nretired ones)."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New display label. Omit to keep it."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New meaning, for the agent deciding whether a fact is one. \"\"\nclears it; omit to keep it."
+          },
+          "retired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "true retires the type; false restores it and clears replaced_by."
+          },
+          "replaced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The key of the live type that takes its place. Only on a retired type."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "verify_proof_point",
+      "title": "Verify Proof Point",
+      "description": "Attest a proof point: the moment a claim becomes, or stops being, evidence.\n\nCall it when a person stands behind a claim (verified), withdraws that backing\n(unverified), or declares it a placeholder (fabricated-placeholder). Every direction names\nwho made the call and stamps when. To record a new claim use ``record_proof_point``.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "proof_point_id": {
+            "type": "string",
+            "description": "The proof point to attest."
+          },
+          "verification": {
+            "enum": [
+              "verified",
+              "unverified",
+              "fabricated-placeholder"
+            ],
+            "type": "string",
+            "description": "Its new state."
+          },
+          "attested_by": {
+            "type": "string",
+            "description": "Who is making this call."
+          },
+          "scope_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Naming permissions; omit to keep them."
+          }
+        },
+        "required": [
+          "proof_point_id",
+          "verification",
+          "attested_by"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "withdraw_signal",
+      "title": "Withdraw Signal",
+      "description": "Withdraw a signal that turned out to be wrong, stale or misread.\n\nCall it when the fact itself no longer holds. Nothing is deleted: the signal stays on\nrecord, so anything that cited it can still be traced, and it leaves the default\n``list_signals`` read. Withdrawing again keeps the first withdrawal's time and reason. If\nthe fact holds but was filed for the wrong purpose, use ``update_signal`` instead.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "description": "The signal to withdraw."
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why it is withdrawn, recorded on the signal."
+          }
+        },
+        "required": [
+          "signal_id"
+        ]
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ],
+  "resources": [
+    {
+      "name": "people-evidence",
+      "uri": "skill://people-evidence/SKILL.md",
+      "description": "Record the facts behind a claim. A signal is a fact about them attested by a source; a proof point is a claim about our own work attested by a person. Read what is recorded before researching again, and never cite what is not attested.",
+      "mimeType": "text/markdown",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people",
+      "uri": "skill://people/SKILL.md",
+      "description": "Working the CRM well beyond the server's rules - examples of resolving, importing, filtering and counting, external references, and what to do when a field is missing. Read when a task spans several records or a list.",
+      "mimeType": "text/markdown",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_contacts",
+      "uri": "ui://people/contacts",
+      "description": "The CRM app, opening on the contacts list.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "csp": {}
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_opportunities",
+      "uri": "ui://people/opportunities",
+      "description": "The CRM app, opening on the deal pipeline.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "csp": {}
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_organizations",
+      "uri": "ui://people/organizations",
+      "description": "The CRM app, opening on the organizations list.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "csp": {}
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_settings",
+      "uri": "ui://people/settings",
+      "description": "The CRM app's settings: custom fields and pipeline stages.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "csp": {}
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ],
+  "resource_templates": [
+    {
+      "name": "contact",
+      "title": "Contact",
+      "uriTemplate": "people://contacts/{contact_id}",
+      "description": "One contact as get_contact returns it.",
+      "mimeType": "application/json",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "opportunity",
+      "title": "Opportunity",
+      "uriTemplate": "people://opportunities/{opportunity_id}",
+      "description": "One deal as get_opportunity returns it.",
+      "mimeType": "application/json",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "organization",
+      "title": "Organization",
+      "uriTemplate": "people://organizations/{organization_id}",
+      "description": "One organization as get_organization returns it.",
+      "mimeType": "application/json",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "proof_point",
+      "title": "Proof point",
+      "uriTemplate": "people://proof-points/{proof_point_id}",
+      "description": "One proof point as get_proof_point returns it, with its verification.",
+      "mimeType": "application/json",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "signal",
+      "title": "Signal",
+      "uriTemplate": "people://signals/{signal_id}",
+      "description": "One signal as get_signal returns it: the claim, the quote, its source, and the source's and event's dates.",
+      "mimeType": "application/json",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ],
+  "skill_sha256": {
+    "skill://people-evidence/SKILL.md": "b1a1e1c1757d9c818743318b9433bf06414e14b7e677d53a9ead9c54aa8e4cd5",
+    "skill://people/SKILL.md": "59a514a65482285bea74ae0a76c89785426c5be1af47dca38273246e0c0c6eb3"
+  }
+}

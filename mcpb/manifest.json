@@ -1,0 +1,264 @@
+{
+  "manifest_version": "0.4",
+  "name": "@nimblebraininc/agentreadycrm",
+  "display_name": "Agent Ready CRM",
+  "version": "0.1.0",
+  "description": "A CRM for AI agents: organizations, contacts, interactions, deals, signals and proof points, kept in one SQLite file on your own machine. No account, no cloud service.",
+  "author": {
+    "name": "NimbleBrain Inc",
+    "email": "hello@nimblebrain.ai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NimbleBrainInc/agentreadycrm"
+  },
+  "homepage": "https://agentreadycrm.com",
+  "license": "MIT",
+  "keywords": [
+    "crm",
+    "contacts",
+    "organizations",
+    "pipeline",
+    "agents",
+    "local",
+    "sqlite"
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.13,<3.15"
+    }
+  },
+  "user_config": {
+    "database_path": {
+      "type": "string",
+      "title": "Database file",
+      "description": "Where your CRM is stored. Leave empty for the default: crm.db in your user data directory. Keep it on a local disk, not a network share.",
+      "required": false,
+      "default": ""
+    }
+  },
+  "server": {
+    "type": "uv",
+    "entry_point": "mcp_people_local",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "--frozen",
+        "--no-dev",
+        "python",
+        "-m",
+        "mcp_people_local"
+      ],
+      "env": {
+        "PEOPLE_RUNTIME": "local",
+        "PEOPLE_LOCAL_DB": "${user_config.database_path}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "find_or_create_organization",
+      "description": "Find an organization by domain (else name), or create it. Repeating it converges; a match fills only empty fields."
+    },
+    {
+      "name": "find_or_create_contact",
+      "description": "Find a contact by email (else name and organization), or create it, wiring it to its organization. Repeating it converges."
+    },
+    {
+      "name": "import_organizations",
+      "description": "Find or create up to 500 organizations from a list in one call, each as find_or_create_organization would."
+    },
+    {
+      "name": "import_contacts",
+      "description": "Find or create up to 500 contacts from a list in one call, each as find_or_create_contact would."
+    },
+    {
+      "name": "update_contact",
+      "description": "Change a contact's fields, custom fields, external references or research dossier; only what is passed changes."
+    },
+    {
+      "name": "merge_contacts",
+      "description": "Merge a duplicate contact into the one to keep, moving its interactions and filling empty fields, after the user confirms."
+    },
+    {
+      "name": "merge_organizations",
+      "description": "Merge a duplicate organization into the one to keep, moving its contacts, interactions, deals and references, after the user confirms."
+    },
+    {
+      "name": "archive_contact",
+      "description": "Hide a contact from default views, or restore it; nothing is deleted."
+    },
+    {
+      "name": "archive_organization",
+      "description": "Hide an organization from default views, or restore it; nothing is deleted."
+    },
+    {
+      "name": "delete_contact",
+      "description": "Delete a contact and what exists only for it, so no read finds it again, after the user confirms."
+    },
+    {
+      "name": "delete_organization",
+      "description": "Delete an organization and what exists only for it, so no read finds it again, after the user confirms."
+    },
+    {
+      "name": "update_organization",
+      "description": "Change an organization's fields, custom fields, external references or research dossier; only what is passed changes."
+    },
+    {
+      "name": "log_interaction",
+      "description": "Record a meeting, email, call, note or research touch with a contact, optionally against a deal."
+    },
+    {
+      "name": "get_pipeline",
+      "description": "Read the deal pipeline: its stages in order with each stage's deals, value and weighted value, and the totals."
+    },
+    {
+      "name": "define_pipeline_stage",
+      "description": "Add a stage to the deal pipeline. An existing key is left as it is."
+    },
+    {
+      "name": "update_pipeline_stage",
+      "description": "Change a pipeline stage's label, order, default probability or outcome."
+    },
+    {
+      "name": "define_field",
+      "description": "Define a custom field on contacts, organizations or deals so it can be set, filtered and shown as a column."
+    },
+    {
+      "name": "update_field",
+      "description": "Retire, restore or edit a custom field: its label, description, unused options, range or default column."
+    },
+    {
+      "name": "list_fields",
+      "description": "List the core and custom fields of contacts, organizations and deals, with their types, options and meaning."
+    },
+    {
+      "name": "get_contact",
+      "description": "Read one contact with its counts, newest interactions and external references."
+    },
+    {
+      "name": "resolve_external_refs",
+      "description": "Say which of a batch of other systems' references this workspace already holds, and on which records."
+    },
+    {
+      "name": "get_organization",
+      "description": "Read one organization with its counts, newest interactions and external references."
+    },
+    {
+      "name": "list_contacts",
+      "description": "List contacts by free-text query, filter on any field, sort and columns, a page at a time."
+    },
+    {
+      "name": "list_organizations",
+      "description": "List organizations by free-text query, filter on any field, sort and columns, a page at a time."
+    },
+    {
+      "name": "count_records",
+      "description": "Count contacts, organizations or deals by one field's values, under an optional filter."
+    },
+    {
+      "name": "list_interactions",
+      "description": "List one contact's, organization's or deal's interactions, newest first, a page at a time."
+    },
+    {
+      "name": "link_similar_organizations",
+      "description": "Save a similar-companies result as lookalikes of an organization; new ones stay discovered until promoted."
+    },
+    {
+      "name": "promote_organization",
+      "description": "Promote a discovered lookalike to active so it appears in the default organization views."
+    },
+    {
+      "name": "list_similar_organizations",
+      "description": "List an organization's linked lookalikes with their similarity scores."
+    },
+    {
+      "name": "create_opportunity",
+      "description": "Create a deal on an account or contact. Every call creates one unless an idempotency_key repeats."
+    },
+    {
+      "name": "update_opportunity",
+      "description": "Change a deal's fields, custom fields or research dossier; the stage moves with move_opportunity."
+    },
+    {
+      "name": "move_opportunity",
+      "description": "Move a deal to another pipeline stage, stamping or clearing its close time."
+    },
+    {
+      "name": "get_opportunity",
+      "description": "Read one deal with its counts and newest interactions."
+    },
+    {
+      "name": "list_opportunities",
+      "description": "List deals by free-text query, filter on any field, sort and columns, a page at a time. Open deals unless asked."
+    },
+    {
+      "name": "list_signal_types",
+      "description": "List the kinds of fact this workspace records about an account, with how many active signals each holds."
+    },
+    {
+      "name": "define_signal_type",
+      "description": "Add a signal type to the workspace's vocabulary. An existing key is left as it is."
+    },
+    {
+      "name": "update_signal_type",
+      "description": "Change a signal type's label or description."
+    },
+    {
+      "name": "record_signal",
+      "description": "Record one fact about an organization with the verbatim quote that proves it and the URL it came from."
+    },
+    {
+      "name": "withdraw_signal",
+      "description": "Withdraw a signal that turned out wrong or stale; it stays on record and leaves the default reads."
+    },
+    {
+      "name": "update_signal",
+      "description": "Change whom a signal is evidence for: add a purpose, or remove one filed by mistake."
+    },
+    {
+      "name": "get_signal",
+      "description": "Read one signal: its claim, the verbatim quote, and where and when it came from."
+    },
+    {
+      "name": "list_signals",
+      "description": "List recorded signals newest first, or the ones changed since a mark."
+    },
+    {
+      "name": "record_proof_point",
+      "description": "Record a citable claim about our own work, with whether anyone has attested it."
+    },
+    {
+      "name": "verify_proof_point",
+      "description": "Attest a proof point as verified, unverified or a placeholder, naming who made the call."
+    },
+    {
+      "name": "get_proof_point",
+      "description": "Read one proof point: its claim, metric and verification."
+    },
+    {
+      "name": "list_proof_points",
+      "description": "List recorded proof points newest first, filtered by client or verification."
+    }
+  ],
+  "_meta": {
+    "org.mpaktrust": {
+      "mtf_version": "0.1",
+      "permissions": {
+        "filesystem": "write",
+        "network": "outbound",
+        "environment": "read",
+        "subprocess": "none",
+        "native": "none"
+      }
+    }
+  }
+}

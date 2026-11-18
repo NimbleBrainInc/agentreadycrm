@@ -1,0 +1,14 @@
+# The MCP bundle's project: it installs the released agentreadycrm from PyPI and nothing else, and
+# the manifest runs its local command (python -m mcp_people_local) with uv. The release workflow
+# locks it (uv.lock) once that version is on PyPI, and packs the lock into the bundle, so
+# `uv run --frozen` installs exactly what was tested. The pin must equal the package's name and
+# version (tests/test_mcpb.py).
+[project]
+name = "agentreadycrm-mcpb"
+version = "0.1.0"
+description = "The Agent Ready CRM MCP bundle: runs the agentreadycrm package with uv."
+requires-python = ">=3.13,<3.15"
+dependencies = ["agentreadycrm==0.1.0"]
+
+[tool.uv]
+package = false
