@@ -234,12 +234,15 @@ function ColumnPicker({
  */
 export function RecordList({
   entity,
+  search: launchSearch,
   onOpen,
   onState,
   onNew,
   onImport,
 }: {
   entity: Entity;
+  /** A query the list opens searching for: the one the tool call it was rendered for searched. */
+  search?: string;
   onOpen: (id: string) => void;
   /** What the list is showing, for the app to publish as the agent's context. */
   onState: (state: ListState) => void;
@@ -300,6 +303,13 @@ export function RecordList({
     const timer = setTimeout(() => setSearch(searchInput), 250);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  // A new launch query replaces the search box's text; the reader's own typing stays theirs.
+  useEffect(() => {
+    if (!launchSearch) return;
+    setSearchInput(launchSearch);
+    setSearch(launchSearch);
+  }, [launchSearch]);
 
   // The pipeline names the stage columns and how a stage key reads in a cell. A deal can sit
   // in a retired stage, so the labels read every stage; the board's columns are the live ones.

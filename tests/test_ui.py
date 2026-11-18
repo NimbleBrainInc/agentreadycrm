@@ -9,6 +9,7 @@ no DB is touched at import time) and asserts the MIME type the resource is serve
 """
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -70,4 +71,101 @@ def test_every_view_is_declared_as_a_self_contained_mcp_app():
     for view in ui_mod.VIEWS:
         resource = asyncio.run(mcp.get_resource(f"ui://people/{view}"))
         assert resource is not None
-        assert (resource.meta or {}).get("ui") == {"csp": {}}
+        assert (resource.meta or {}).get("ui") == {"csp": {}, "prefersBorder": True}
+
+
+#: The read tools an MCP Apps host renders a view for (Claude, ChatGPT), and the view each opens.
+BOUND = {
+    "get_contact": "contacts",
+    "list_contacts": "contacts",
+    "get_organization": "organizations",
+    "list_organizations": "organizations",
+    "get_opportunity": "opportunities",
+    "get_pipeline": "opportunities",
+    "list_opportunities": "opportunities",
+}
+
+#: What ChatGPT reads on a view resource and its build template, beside ``_meta.ui``.
+VIEW_META = {
+    "openai/widgetDomain": "https://agentreadycrm.com",
+    "ui": {"csp": {}, "prefersBorder": True},
+}
+
+
+def _read(uri: str):
+    from mcp_people.server import mcp
+
+    [entry] = asyncio.run(mcp.read_resource(uri)).contents
+    return entry
+
+
+def test_each_bound_tool_names_the_hash_of_the_view_it_serves():
+    """A host renders a view only for a tool naming it in ``_meta.ui.resourceUri``. The URI is
+    the view's plus the first 12 hex of the SHA-256 of exactly the HTML served, and it reads."""
+    from mcp_people import server
+
+    for name, view in BOUND.items():
+        tool = asyncio.run(server.mcp.get_tool(name))
+        assert tool is not None
+        meta = tool.meta or {}
+        served = _read(f"ui://people/{view}").content
+        assert isinstance(served, str)
+        key = hashlib.sha256(served.encode("utf-8")).hexdigest()[:12]
+        assert meta["ui"] == {
+            "resourceUri": f"ui://people/{view}/{key}",
+            "visibility": ["model", "app"],
+        }
+        assert meta["openai/widgetAccessible"] is True
+        bound = _read(meta["ui"]["resourceUri"])
+        assert bound.mime_type == "text/html;profile=mcp-app"
+        assert bound.content == served
+
+
+def test_no_other_tool_names_a_view_and_every_tool_is_callable_from_a_view():
+    """Settings is bound to no tool: its one natural read, ``list_fields``, is a lookup the
+    agent makes before filtering or writing a field, where a settings editor would interrupt."""
+    from mcp_people import server
+
+    for tool in asyncio.run(server.mcp.list_tools()):
+        meta = tool.meta or {}
+        assert ("ui" in meta) == (tool.name in BOUND), tool.name
+        assert meta["openai/widgetAccessible"] is True, tool.name
+
+
+def test_every_uri_of_a_view_serves_its_html_and_chatgpts_keys():
+    """The bound key, a key from an older build, and the listed URI all read the same view."""
+    from mcp_people import server
+
+    for view in ("contacts", "organizations", "opportunities"):
+        uris = [
+            server.bound_view_uri(view),
+            f"ui://people/{view}/abcdefabcdef",
+            f"ui://people/{view}",
+        ]
+        for uri in uris:
+            entry = _read(uri)
+            assert entry.mime_type == "text/html;profile=mcp-app"
+            assert entry.content == server.VIEW_HTML[view]
+            assert entry.meta == VIEW_META
+    assert _read("ui://people/settings").meta == VIEW_META
+
+
+def test_the_views_are_read_once_at_import(monkeypatch):
+    """Reads serve the copies taken at import, the ones the keys hash, never a fresh read."""
+    from mcp_people import server
+
+    assert {view: ui_mod.load_ui(view) for view in ui_mod.VIEWS} == server.VIEW_HTML
+
+    def _fail(view: str) -> str:
+        raise AssertionError(f"load_ui({view!r}) called after import")
+
+    monkeypatch.setattr(server, "load_ui", _fail)
+    monkeypatch.setattr(ui_mod, "load_ui", _fail)
+    for view in ui_mod.VIEWS:
+        assert _read(f"ui://people/{view}").content == server.VIEW_HTML[view]
+
+
+def test_the_server_is_named_for_the_product():
+    from mcp_people import server
+
+    assert server.mcp.name == "Agent Ready CRM"

@@ -66,8 +66,8 @@ comment before posting: `python scripts/check_public.py --text <file>`.
 
 A deliberate change edits the golden file by hand in the same pull request, so review sees the
 diff. A dependency bump that changes one is a reviewed change too: that is why
-`nimblebrain-server-sdk` and `pgkeyset` are pinned exactly. A change to a tool's name, schema
-or annotations also moves `CONTRACT_SHA256` in `tests/test_public_surface.py`.
+`nimblebrain-server-sdk` and `pgkeyset` are pinned exactly. A change to a tool's name, schema,
+annotations or `_meta` also moves `CONTRACT_SHA256` in `tests/test_public_surface.py`.
 
 ## Working here
 

@@ -14,10 +14,17 @@ const { host } = vi.hoisted(() => ({
     navigate: null as ((id: string) => void) | null,
     sync: null as (() => void) | null,
     mounts: 0,
+    // The tool call an MCP Apps host rendered the view for, as the bridge delivers it.
+    toolName: undefined as string | undefined,
+    toolInput: null as Record<string, unknown> | null,
+    toolResult: null as { structuredContent?: unknown } | null,
   },
 }));
 
 vi.mock("@nimblebrain/synapse/react", () => ({
+  useApp: () => ({ toolInfo: host.toolName ? { tool: { name: host.toolName } } : undefined }),
+  useToolInput: () => host.toolInput,
+  useToolResult: () => host.toolResult,
   useDataSync: (onSync: () => void) => {
     host.sync = onSync;
   },
@@ -63,10 +70,10 @@ function Page({
 }
 
 vi.mock("./people/RecordList", () => ({
-  RecordList: ({ onOpen }: { onOpen: (id: string) => void }) =>
+  RecordList: ({ onOpen, search }: { onOpen: (id: string) => void; search?: string }) =>
     createElement(
       "ul",
-      { "data-list": "records" },
+      { "data-list": "records", "data-search": search ?? "" },
       createElement("li", null, createElement("button", { onClick: () => onOpen("ct_01A") }, "Dana")),
     ),
 }));
@@ -116,6 +123,9 @@ const navigate = async (id: string) => {
 beforeEach(() => {
   host.showsTrail = false;
   host.mounts = 0;
+  host.toolName = undefined;
+  host.toolInput = null;
+  host.toolResult = null;
 });
 
 afterEach(() => {
@@ -258,5 +268,66 @@ describe("a data sync while a record is open", () => {
     expect(shown()).toBe(page);
     expect(refresh()).not.toBe(before);
     expect(host.mounts).toBe(mounted);
+  });
+});
+
+describe("a view an MCP Apps host renders for a tool call", () => {
+  const listShown = () => !container.querySelector<HTMLElement>("[data-list]")?.closest("[hidden]");
+  const searched = () => container.querySelector("[data-list]")?.getAttribute("data-search");
+  const rendered = async (view: View, toolName: string, input: Record<string, unknown>, result: unknown) => {
+    host.toolName = toolName;
+    host.toolInput = input;
+    host.toolResult = result === null ? null : { structuredContent: result };
+    await mount(view);
+  };
+
+  it.each([
+    ["contact", "get_contact", { contact_id: "ct_01A" }, { contact: { id: "ct_01A" } }, "person:ct_01A", "people://contacts/ct_01A"],
+    ["organization", "get_organization", { organization_id: "org_01A" }, { organization: { id: "org_01A" } }, "organization:org_01A", "people://organizations/org_01A"],
+    ["opportunity", "get_opportunity", { opportunity_id: "op_01A" }, { opportunity: { id: "op_01A" } }, "opportunity:op_01A", "people://opportunities/op_01A"],
+  ] as const)("the %s view opens on the record %s read", async (view, tool, input, result, page, address) => {
+    await rendered(view, tool, input, result);
+    expect(shown()).toBe(page);
+    expect(listShown()).toBe(false);
+    expect(host.trail.at(-1)?.id).toBe(address);
+  });
+
+  it("opens the record the input names before the result arrives", async () => {
+    await rendered("contact", "get_contact", { contact_id: "ct_01B" }, null);
+    expect(shown()).toBe("person:ct_01B");
+  });
+
+  it.each([
+    ["contact", "list_contacts"],
+    ["organization", "list_organizations"],
+    ["opportunity", "list_opportunities"],
+  ] as const)("the %s view opens its list searched for the %s query", async (view, tool) => {
+    await rendered(view, tool, { query: "lark" }, { next_step: "x" });
+    expect(shown()).toBeNull();
+    expect(listShown()).toBe(true);
+    expect(searched()).toBe("lark");
+  });
+
+  it("the opportunities view opens its list for the pipeline", async () => {
+    await rendered("opportunity", "get_pipeline", {}, { stages: [] });
+    expect(shown()).toBeNull();
+    expect(listShown()).toBe(true);
+    expect(searched()).toBe("");
+  });
+
+  it("opened from a placement, with no tool call, shows the list", async () => {
+    await mount("organization");
+    expect(shown()).toBeNull();
+    expect(listShown()).toBe(true);
+  });
+
+  it("stays on the list after going back, though the host delivers the same result again", async () => {
+    await rendered("contact", "get_contact", { contact_id: "ct_01A" }, { contact: { id: "ct_01A" } });
+    await navigate("ui://people/contacts");
+    expect(shown()).toBeNull();
+
+    host.toolResult = { structuredContent: { contact: { id: "ct_01A" } } };
+    await act(async () => root.render(createElement(App, { view: "contact" })));
+    expect(shown()).toBeNull();
   });
 });

@@ -91,9 +91,11 @@ The server also serves two skills (`skill://people/SKILL.md` and
 ## Views
 
 Four views, `ui://people/contacts`, `organizations`, `opportunities` and `settings`, render
-in hosts that support [MCP Apps](https://modelcontextprotocol.io/). Each record has an
-address (`people://contacts/<id>` and so on) that a host can open in a view. The views read
-and change data only through the same tools.
+in Claude, ChatGPT and other hosts that support [MCP Apps](https://modelcontextprotocol.io/).
+Ask for your contacts, a company or the pipeline, and the host shows the view for what the
+agent read: the list, or the one record. Each record also has an address
+(`people://contacts/<id>` and so on) that a host can open in a view. The views read and change
+data only through the same tools.
 
 ## More
 

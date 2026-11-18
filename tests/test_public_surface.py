@@ -8,8 +8,8 @@ greps that text.
 Clients call tools by name with arguments and read results, so those hold still while the
 prose changes. ``test_the_contract_is_unchanged`` hashes the surface with every description,
 title, the instructions and the skill digests removed: a rewording leaves the digest alone,
-and a change to a tool name, a schema (properties, types, required, enums), an annotation or
-a resource URI changes it. Such a change edits ``CONTRACT_SHA256`` in the same PR as
+and a change to a tool name, a schema (properties, types, required, enums), an annotation, a
+resource URI or a ``_meta`` key a host reads (the view a tool binds) changes it. Such a change edits ``CONTRACT_SHA256`` in the same PR as
 ``golden/surface.json``, so review sees that the contract moved, not only the words.
 """
 
@@ -27,7 +27,7 @@ from surface_shape import SKILL_URIS, collect, normalized
 from mcp_people import server
 
 #: SHA-256 of the surface with its prose removed (see ``contract``).
-CONTRACT_SHA256 = "ccff102c71d6d4e5e5b7540690195120f2fc1a1d7a691d2fea995e90861057b7"
+CONTRACT_SHA256 = "c6ee49223e68767dcf3a445e91d80936df347ba7820f152efc658858dd400f25"
 
 #: Names and mechanisms a client never reads. A generic CRM word ("workspace", an
 #: ``outbound`` direction, the ``enriched`` stage, a graph ``edge``) is not on it. One letter of

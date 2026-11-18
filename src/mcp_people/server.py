@@ -31,6 +31,7 @@ runtime ``PEOPLE_RUNTIME`` names), and ``python -m mcp_people.server`` serves st
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -100,7 +101,7 @@ from mcp_people.runtime import (
     Scope,
     select_runtime,
 )
-from mcp_people.ui import load_ui
+from mcp_people.ui import VIEWS, load_ui
 
 SERVICE = "people"
 
@@ -200,7 +201,7 @@ skill://people-evidence/SKILL.md for more."""
 
 
 mcp: FastMCP = FastMCP(
-    "People",
+    "Agent Ready CRM",
     # The deployed version, which the deployment injects; "dev" for a local run.
     version=os.environ.get("SERVICE_VERSION") or "dev",
     lifespan=_lifespan,
@@ -378,6 +379,29 @@ REMOVE = ToolAnnotations(
 MERGE = ToolAnnotations(
     read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=False
 )
+
+
+# --------------------------------------------------------------------------- #
+# ChatGPT's keys. ChatGPT reads two OpenAI-specific ``_meta`` keys beside the  #
+# MCP Apps ones; the source of truth is the OpenAI Apps SDK reference,         #
+# https://developers.openai.com/plugins/reference. They are plain metadata,    #
+# the same in every runtime, and other hosts ignore them.                      #
+# --------------------------------------------------------------------------- #
+
+#: On every tool. ``openai/widgetAccessible`` defaults to ``false``, and ChatGPT reads it to
+#: decide whether a view may call the tool from its frame. The views read, write, import and
+#: merge through most of the tools, and no tool is for the model alone, so every tool carries
+#: ``true``: a tool a view starts calling later is never refused in ChatGPT alone.
+CHATGPT_TOOL_META: dict[str, Any] = {"openai/widgetAccessible": True}
+
+#: The product's origin, which ChatGPT renders the views under. ``openai/widgetDomain`` is
+#: ChatGPT's alias for ``_meta.ui.domain``. The alias carries it rather than ``ui.domain``
+#: because other MCP Apps hosts validate ``ui.domain`` against domains of their own. It names
+#: the product, not a deployment, so it is a constant.
+CHATGPT_WIDGET_DOMAIN = "https://agentreadycrm.com"
+
+#: On each view resource and its build template, in the listing and in what a read returns.
+CHATGPT_UI_META: dict[str, Any] = {"openai/widgetDomain": CHATGPT_WIDGET_DOMAIN}
 
 
 # --------------------------------------------------------------------------- #
@@ -748,39 +772,98 @@ class SimilarOrganization(TypedDict, total=False):
 
 
 # --------------------------------------------------------------------------- #
-# UI resource — the Tier-3 Synapse app shell.                                   #
+# UI resources: the views, MCP Apps resources a host renders in a frame.        #
 # --------------------------------------------------------------------------- #
 
 # Each view is declared as an MCP App (FastMCP's ``app=``), which publishes the spec's
 # ``_meta.ui`` beside the ``text/html;profile=mcp-app`` MIME type, on the listing and on
 # what a read returns. The bundle is one self-contained file that loads nothing from
-# elsewhere, so the frame's policy names no outside origin. No tool is bound to a view:
-# a host opens one from its own placement or from a record's address.
-_VIEW_APP = AppConfig(csp=ResourceCSP())
+# elsewhere, so the frame's policy names no outside origin. A view asks for a border, which a
+# host draws where the frame sits among other content (inline in a conversation); a host
+# that gives the view a full pane draws none.
+_VIEW_APP = AppConfig(prefers_border=True, csp=ResourceCSP())
+
+#: Each view's HTML, read once at start. Every URI of a view serves this one copy, and
+#: :data:`VIEW_BUILDS` hashes exactly these bytes, so a build key always names what is served.
+VIEW_HTML: dict[str, str] = {view: load_ui(view) for view in VIEWS}
+
+#: Each view's build key: the first 12 hex characters of its served HTML's SHA-256.
+VIEW_BUILDS: dict[str, str] = {
+    view: hashlib.sha256(html.encode("utf-8")).hexdigest()[:12] for view, html in VIEW_HTML.items()
+}
 
 
-@mcp.resource("ui://people/contacts", app=_VIEW_APP)
+def view_uri(view: str) -> str:
+    """The view's listed URI. A host placement names it, so it stays fixed across builds."""
+    return f"ui://people/{view}"
+
+
+def bound_view_uri(view: str) -> str:
+    """The URI a tool binds the view to: the listed URI plus the build key.
+
+    A host may cache a ``ui://`` resource by URI, so the bound URI carries the build: a new UI
+    is a new URI, and a host fetches it instead of rendering its cached copy.
+    """
+    return f"{view_uri(view)}/{VIEW_BUILDS[view]}"
+
+
+def _bound_to(view: str) -> AppConfig:
+    """What a read tool declares to have an MCP Apps host render ``view`` for its call.
+
+    Claude, ChatGPT and other MCP Apps hosts render a view only for a tool that names it in
+    ``_meta.ui.resourceUri``. The app opens on the record or listing the call read (the
+    host hands it the call's input and result). The views also call these tools from their
+    frame, so both audiences may.
+    """
+    return AppConfig(resource_uri=bound_view_uri(view), visibility=["model", "app"])
+
+
+@mcp.resource("ui://people/contacts", app=_VIEW_APP, meta=CHATGPT_UI_META)
 def people_ui_contacts() -> str:
     """The CRM app, opening on the contacts list."""
-    return load_ui("contacts")
+    return VIEW_HTML["contacts"]
 
 
-@mcp.resource("ui://people/organizations", app=_VIEW_APP)
+@mcp.resource("ui://people/organizations", app=_VIEW_APP, meta=CHATGPT_UI_META)
 def people_ui_organizations() -> str:
     """The CRM app, opening on the organizations list."""
-    return load_ui("organizations")
+    return VIEW_HTML["organizations"]
 
 
-@mcp.resource("ui://people/opportunities", app=_VIEW_APP)
+@mcp.resource("ui://people/opportunities", app=_VIEW_APP, meta=CHATGPT_UI_META)
 def people_ui_opportunities() -> str:
     """The CRM app, opening on the deal pipeline."""
-    return load_ui("opportunities")
+    return VIEW_HTML["opportunities"]
 
 
-@mcp.resource("ui://people/settings", app=_VIEW_APP)
+@mcp.resource("ui://people/settings", app=_VIEW_APP, meta=CHATGPT_UI_META)
 def people_ui_settings() -> str:
     """The CRM app's settings: custom fields and pipeline stages."""
-    return load_ui("settings")
+    return VIEW_HTML["settings"]
+
+
+# A bound view under its build key. Any key resolves to the current build, so a conversation
+# or a tool list that names an older build still renders the view. The key selects nothing
+# and is never echoed. Settings is bound to no tool, so it has no build template.
+@mcp.resource("ui://people/contacts/{build}", app=_VIEW_APP, meta=CHATGPT_UI_META)
+def people_ui_contacts_build(build: str) -> str:
+    """The CRM app's contacts view under a build key. Every key serves the current build."""
+    del build
+    return VIEW_HTML["contacts"]
+
+
+@mcp.resource("ui://people/organizations/{build}", app=_VIEW_APP, meta=CHATGPT_UI_META)
+def people_ui_organizations_build(build: str) -> str:
+    """The CRM app's organizations view under a build key. Every key serves the current build."""
+    del build
+    return VIEW_HTML["organizations"]
+
+
+@mcp.resource("ui://people/opportunities/{build}", app=_VIEW_APP, meta=CHATGPT_UI_META)
+def people_ui_opportunities_build(build: str) -> str:
+    """The CRM app's deal pipeline under a build key. Every key serves the current build."""
+    del build
+    return VIEW_HTML["opportunities"]
 
 
 # --------------------------------------------------------------------------- #
@@ -788,7 +871,7 @@ def people_ui_settings() -> str:
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def find_or_create_organization(
     name: str,
     domain: str | None = None,
@@ -867,7 +950,7 @@ async def find_or_create_organization(
     return result
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def find_or_create_contact(
     name: str | None = None,
     email: str | None = None,
@@ -1000,7 +1083,7 @@ def _import_next_step(result: dict[str, Any], noun: str, read: str) -> str:
     return " ".join([*steps, f"Read the {noun} with {read}."])
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def import_organizations(
     rows: list[OrganizationRow],
     source: str | None = "import",
@@ -1046,7 +1129,7 @@ async def import_organizations(
     return {**result, "next_step": _import_next_step(result, "organizations", "list_organizations")}
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def import_contacts(
     rows: list[ContactRow],
     source: str | None = "import",
@@ -1092,7 +1175,7 @@ async def import_contacts(
     return {**result, "next_step": _import_next_step(result, "contacts", "list_contacts")}
 
 
-@mcp.tool(annotations=EDIT_APPEND)
+@mcp.tool(annotations=EDIT_APPEND, meta=CHATGPT_TOOL_META)
 async def update_contact(
     contact_id: str,
     name: str | None = None,
@@ -1200,7 +1283,7 @@ async def update_contact(
     }
 
 
-@mcp.tool(annotations=MERGE)
+@mcp.tool(annotations=MERGE, meta=CHATGPT_TOOL_META)
 async def merge_contacts(
     target_id: str,
     source_id: str,
@@ -1211,8 +1294,9 @@ async def merge_contacts(
     ALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will
     be kept (``target_id``) and which merged away (``source_id``), and call this only after
     they say to proceed; never pick the duplicate on your own judgment. The kept contact takes
-    every interaction and external reference of the other, and its empty fields are filled
-    from it; a value it holds is never overwritten. The merged-away record is archived, not
+    every interaction, signal and external reference of the other, and every deal naming the
+    other as its contact; its empty fields are filled from it, and a value it holds is never
+    overwritten. The merged-away record is archived, not
     deleted (``archive_contact(archived=false)`` restores it as a record of its own). Use this only for duplicates that already exist (``find_or_create_contact``
     avoids making them), and never rename a duplicate instead: its interactions would stay on
     the wrong record.
@@ -1222,7 +1306,8 @@ async def merge_contacts(
         source_id: The duplicate to merge into it and archive.
 
     Returns:
-        {contact, interactions_moved, fields_filled, next_step}.
+        {contact, interactions_moved, signals_moved, opportunities_moved, fields_filled,
+        next_step}.
     """
     sctx = runtime().identity()
     try:
@@ -1238,6 +1323,8 @@ async def merge_contacts(
     return {
         "contact": dump(contact),
         "interactions_moved": summary["interactions_moved"],
+        "signals_moved": summary["signals_moved"],
+        "opportunities_moved": summary["opportunities_moved"],
         "fields_filled": summary["fields_filled"],
         "next_step": (
             f"Review the merged contact with get_contact(contact_id={contact.id!r}) or its "
@@ -1246,7 +1333,7 @@ async def merge_contacts(
     }
 
 
-@mcp.tool(annotations=MERGE)
+@mcp.tool(annotations=MERGE, meta=CHATGPT_TOOL_META)
 async def merge_organizations(
     target_id: str,
     source_id: str,
@@ -1257,8 +1344,10 @@ async def merge_organizations(
     ALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will
     be kept (``target_id``) and which merged away (``source_id``), and call this only after
     they say to proceed. The kept organization takes every contact, interaction, deal,
-    external reference and lookalike of the other, and its empty fields are filled from it;
-    a value it holds is never overwritten. The merged-away record is archived, not deleted.
+    signal, proof point, external reference and lookalike of the other, and the signals
+    filed as evidence for the other; its empty fields are filled from it, and a value it
+    holds is never overwritten. A signal both hold (the same source URL and type) is kept
+    once, with the purposes of both. The merged-away record is archived, not deleted.
     ``find_or_create_organization`` already prevents new duplicates by domain and name, so use
     this for two that exist, such as two domains that turn out to be one company. Never
     rename a duplicate instead: its contacts would stay on the wrong record.
@@ -1268,8 +1357,9 @@ async def merge_organizations(
         source_id: The duplicate to merge into it and archive.
 
     Returns:
-        {organization, contacts_moved, interactions_moved, opportunities_moved, edges_moved,
-        edges_dropped, fields_filled, next_step}.
+        {organization, contacts_moved, interactions_moved, opportunities_moved, signals_moved,
+        signals_dropped, proof_points_moved, evidence_moved, edges_moved, edges_dropped,
+        fields_filled, next_step}.
     """
     sctx = runtime().identity()
     try:
@@ -1290,6 +1380,10 @@ async def merge_organizations(
                 "contacts_moved",
                 "interactions_moved",
                 "opportunities_moved",
+                "signals_moved",
+                "signals_dropped",
+                "proof_points_moved",
+                "evidence_moved",
                 "edges_moved",
                 "edges_dropped",
                 "fields_filled",
@@ -1302,7 +1396,7 @@ async def merge_organizations(
     }
 
 
-@mcp.tool(annotations=MOVE)
+@mcp.tool(annotations=MOVE, meta=CHATGPT_TOOL_META)
 async def archive_contact(
     contact_id: str, archived: bool = True, ctx: Context | None = None
 ) -> dict:
@@ -1329,7 +1423,7 @@ async def archive_contact(
     )
 
 
-@mcp.tool(annotations=MOVE)
+@mcp.tool(annotations=MOVE, meta=CHATGPT_TOOL_META)
 async def archive_organization(
     organization_id: str, archived: bool = True, ctx: Context | None = None
 ) -> dict:
@@ -1388,7 +1482,7 @@ async def _archive(
     return {entity: dump(record), "next_step": next_step}
 
 
-@mcp.tool(annotations=REMOVE)
+@mcp.tool(annotations=REMOVE, meta=CHATGPT_TOOL_META)
 async def delete_contact(
     contact_id: str,
     confirm: str,
@@ -1431,7 +1525,7 @@ async def delete_contact(
     }
 
 
-@mcp.tool(annotations=REMOVE)
+@mcp.tool(annotations=REMOVE, meta=CHATGPT_TOOL_META)
 async def delete_organization(
     organization_id: str,
     confirm: str,
@@ -1481,7 +1575,7 @@ async def delete_organization(
     }
 
 
-@mcp.tool(annotations=EDIT_APPEND)
+@mcp.tool(annotations=EDIT_APPEND, meta=CHATGPT_TOOL_META)
 async def update_organization(
     organization_id: str,
     name: str | None = None,
@@ -1568,7 +1662,7 @@ async def update_organization(
     }
 
 
-@mcp.tool(annotations=ADD)
+@mcp.tool(annotations=ADD, meta=CHATGPT_TOOL_META)
 async def log_interaction(
     contact_id: str,
     kind: str,
@@ -1643,7 +1737,7 @@ async def log_interaction(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("opportunities"))
 async def get_pipeline(
     organization_id: str | None = None,
     include_retired: bool = False,
@@ -1687,7 +1781,7 @@ async def get_pipeline(
     }
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def define_pipeline_stage(
     key: str,
     label: str,
@@ -1745,7 +1839,7 @@ async def define_pipeline_stage(
     return {"stage": dump(stage), "action": action, "next_step": next_step}
 
 
-@mcp.tool(annotations=EDIT)
+@mcp.tool(annotations=EDIT, meta=CHATGPT_TOOL_META)
 async def update_pipeline_stage(
     key: str,
     label: str | None = None,
@@ -1817,7 +1911,7 @@ async def update_pipeline_stage(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def define_field(
     entity: Entity,
     key: str,
@@ -1891,7 +1985,7 @@ async def define_field(
     return result
 
 
-@mcp.tool(annotations=EDIT)
+@mcp.tool(annotations=EDIT, meta=CHATGPT_TOOL_META)
 async def update_field(
     entity: Entity,
     key: str,
@@ -1973,7 +2067,7 @@ async def update_field(
     return {"field": dump(field), "action": action, "next_step": next_step}
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_fields(
     entity: Entity | None = None, include_retired: bool = False, ctx: Context | None = None
 ) -> dict:
@@ -2030,7 +2124,7 @@ async def list_fields(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("contacts"))
 async def get_contact(contact_id: str, ctx: Context | None = None) -> dict:
     """Read one contact in full: fields, dossier, counts, external references and the 5 newest interactions.
 
@@ -2073,7 +2167,7 @@ async def get_contact(contact_id: str, ctx: Context | None = None) -> dict:
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def resolve_external_refs(refs: list[str], ctx: Context | None = None) -> dict:
     """Say which of a batch of other systems' references this workspace already holds, and on which records.
 
@@ -2110,7 +2204,7 @@ async def resolve_external_refs(refs: list[str], ctx: Context | None = None) -> 
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("organizations"))
 async def get_organization(organization_id: str, ctx: Context | None = None) -> dict:
     """Read one organization in full: fields, dossier, counts, external references and the 5 newest interactions.
 
@@ -2202,7 +2296,7 @@ def _page_result(key: str, tool: str, page: store.Page, *, open_with: str) -> di
     return result
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("contacts"))
 async def list_contacts(
     query: str | None = None,
     organization_id: str | None = None,
@@ -2274,7 +2368,7 @@ async def list_contacts(
     return _page_result("contacts", "list_contacts", page, open_with="get_contact(contact_id=...)")
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("organizations"))
 async def list_organizations(
     query: str | None = None,
     industry: str | None = None,
@@ -2351,7 +2445,7 @@ async def list_organizations(
     )
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def count_records(
     entity: Entity,
     field: str,
@@ -2414,7 +2508,7 @@ async def count_records(
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_interactions(
     contact_id: str | None = None,
     organization_id: str | None = None,
@@ -2491,7 +2585,7 @@ async def list_interactions(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def link_similar_organizations(
     organization_id: str,
     companies: list[SimilarOrganization],
@@ -2535,7 +2629,7 @@ async def link_similar_organizations(
     }
 
 
-@mcp.tool(annotations=MOVE)
+@mcp.tool(annotations=MOVE, meta=CHATGPT_TOOL_META)
 async def promote_organization(
     organization_id: str,
     ctx: Context | None = None,
@@ -2572,7 +2666,7 @@ async def promote_organization(
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_similar_organizations(
     organization_id: str,
     ctx: Context | None = None,
@@ -2626,7 +2720,7 @@ async def list_similar_organizations(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=ADD)
+@mcp.tool(annotations=ADD, meta=CHATGPT_TOOL_META)
 async def create_opportunity(
     title: str,
     organization_id: str | None = None,
@@ -2721,7 +2815,7 @@ async def create_opportunity(
     }
 
 
-@mcp.tool(annotations=EDIT_APPEND)
+@mcp.tool(annotations=EDIT_APPEND, meta=CHATGPT_TOOL_META)
 async def update_opportunity(
     opportunity_id: str,
     title: str | None = None,
@@ -2806,7 +2900,7 @@ async def update_opportunity(
     }
 
 
-@mcp.tool(annotations=MOVE)
+@mcp.tool(annotations=MOVE, meta=CHATGPT_TOOL_META)
 async def move_opportunity(
     opportunity_id: str,
     stage: str,
@@ -2852,7 +2946,7 @@ async def move_opportunity(
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("opportunities"))
 async def get_opportunity(opportunity_id: str, ctx: Context | None = None) -> dict:
     """Read one deal in full: fields, dossier, counts and the 5 newest interactions logged against it.
 
@@ -2889,7 +2983,7 @@ async def get_opportunity(opportunity_id: str, ctx: Context | None = None) -> di
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("opportunities"))
 async def list_opportunities(
     query: str | None = None,
     organization_id: str | None = None,
@@ -2970,7 +3064,7 @@ async def list_opportunities(
 # --------------------------------------------------------------------------- #
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_signal_types(include_retired: bool = False, ctx: Context | None = None) -> dict:
     """List this workspace's signal types: the kinds of fact it records about an account.
 
@@ -3005,7 +3099,7 @@ async def list_signal_types(include_retired: bool = False, ctx: Context | None =
     return {"signal_types": [dump(t) for t in types], "next_step": next_step}
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def define_signal_type(
     key: str,
     label: str,
@@ -3052,7 +3146,7 @@ async def define_signal_type(
     return {"signal_type": dump(defined), "action": action, "next_step": next_step}
 
 
-@mcp.tool(annotations=EDIT)
+@mcp.tool(annotations=EDIT, meta=CHATGPT_TOOL_META)
 async def update_signal_type(
     key: str,
     label: str | None = None,
@@ -3111,7 +3205,7 @@ async def update_signal_type(
     return {"signal_type": dump(updated), "action": action, "next_step": next_step}
 
 
-@mcp.tool(annotations=ADD_CONVERGING)
+@mcp.tool(annotations=ADD_CONVERGING, meta=CHATGPT_TOOL_META)
 async def record_signal(
     organization_id: str,
     claim: str,
@@ -3228,7 +3322,7 @@ def _purposes_not_recorded(evidence_for: list[str] | None) -> str:
     return ", and the evidence_for purposes were not recorded" if evidence_for else ""
 
 
-@mcp.tool(annotations=REMOVE)
+@mcp.tool(annotations=REMOVE, meta=CHATGPT_TOOL_META)
 async def withdraw_signal(
     signal_id: str,
     reason: str | None = None,
@@ -3270,7 +3364,7 @@ async def withdraw_signal(
     }
 
 
-@mcp.tool(annotations=MOVE)
+@mcp.tool(annotations=MOVE, meta=CHATGPT_TOOL_META)
 async def update_signal(
     signal_id: str,
     add_evidence_for: list[str] | None = None,
@@ -3354,7 +3448,7 @@ async def update_signal(
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def get_signal(signal_id: str, ctx: Context | None = None) -> dict:
     """Read one signal: its claim, the verbatim quote, the source URL, its dates and whom it is evidence for.
 
@@ -3385,7 +3479,7 @@ async def get_signal(signal_id: str, ctx: Context | None = None) -> dict:
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_signals(
     organization_id: str | None = None,
     contact_id: str | None = None,
@@ -3499,7 +3593,7 @@ async def _list_signal_changes(
     }
 
 
-@mcp.tool(annotations=ADD)
+@mcp.tool(annotations=ADD, meta=CHATGPT_TOOL_META)
 async def record_proof_point(
     claim: str,
     organization_id: str | None = None,
@@ -3577,7 +3671,7 @@ async def record_proof_point(
     return {"proof_point": dump(proof), "action": action, "next_step": next_step}
 
 
-@mcp.tool(annotations=MOVE_STAMPED)
+@mcp.tool(annotations=MOVE_STAMPED, meta=CHATGPT_TOOL_META)
 async def verify_proof_point(
     proof_point_id: str,
     verification: Verification,
@@ -3630,7 +3724,7 @@ async def verify_proof_point(
     return {"proof_point": dump(proof), "next_step": next_step}
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def get_proof_point(proof_point_id: str, ctx: Context | None = None) -> dict:
     """Read one proof point: its claim, metric, timeframe, verification and naming permissions.
 
@@ -3661,7 +3755,7 @@ async def get_proof_point(proof_point_id: str, ctx: Context | None = None) -> di
     }
 
 
-@mcp.tool(annotations=READ)
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_proof_points(
     organization_id: str | None = None,
     verification: Verification | None = None,

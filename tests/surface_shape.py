@@ -5,12 +5,18 @@ way (an in-process client in ``test_golden_surface``) and hands them here, so ev
 compared under one normalization.
 
 The server serves two skills, so the golden holds a digest of each, keyed by its URI.
+
+A tool bound to a view names it as ``ui://people/<view>/<build>``, where ``<build>`` is 12 hex
+characters of the served HTML's SHA-256, so it changes with every UI build. The comparison
+replaces exactly that segment with ``<build>``; ``ui_surface.json``, taken against a fixed
+bundle, holds the real keys.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -69,6 +75,15 @@ async def collect(client: Any, instructions: str | None) -> dict[str, Any]:
     )
 
 
+#: The build key in a bound view URI: the 12 hex characters after ``ui://people/<view>/``.
+_UI_BUILD = re.compile(r"(?<=ui://people/)([a-z]+)/[0-9a-f]{12}(?![0-9a-f])")
+
+
+def normalize_ui_build(text: str) -> str:
+    """Replace each bound view URI's build key in ``text`` with ``<build>``."""
+    return _UI_BUILD.sub(r"\1/<build>", text)
+
+
 def normalized(surface: dict[str, Any]) -> Any:
-    """``surface`` as the golden compares it: JSON types only."""
-    return json.loads(json.dumps(surface))
+    """``surface`` as the golden compares it: JSON types only, view build keys as ``<build>``."""
+    return json.loads(normalize_ui_build(json.dumps(surface)))

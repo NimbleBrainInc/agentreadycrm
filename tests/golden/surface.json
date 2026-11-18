@@ -51,6 +51,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -89,6 +90,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -149,6 +151,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -318,6 +321,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -443,6 +447,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -524,6 +529,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -574,6 +580,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -612,6 +619,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -655,6 +663,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -847,6 +856,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -980,6 +990,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1012,6 +1023,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/contacts/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -1044,6 +1063,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/opportunities/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -1076,6 +1103,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/organizations/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -1118,6 +1153,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/opportunities/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -1150,6 +1193,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1182,6 +1226,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1298,6 +1343,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1394,6 +1440,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1472,6 +1519,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1607,6 +1655,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/contacts/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -1654,6 +1710,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1744,6 +1801,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -1891,6 +1949,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/opportunities/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -2030,6 +2096,14 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
+        "ui": {
+          "resourceUri": "ui://people/organizations/<build>",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
         "fastmcp": {
           "tags": []
         }
@@ -2101,6 +2175,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2131,6 +2206,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2250,6 +2326,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2282,6 +2359,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2403,6 +2481,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2411,7 +2490,7 @@
     {
       "name": "merge_contacts",
       "title": "Merge Contacts",
-      "description": "Merge a duplicate contact into the one to keep, so two records of one person become one.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will\nbe kept (``target_id``) and which merged away (``source_id``), and call this only after\nthey say to proceed; never pick the duplicate on your own judgment. The kept contact takes\nevery interaction and external reference of the other, and its empty fields are filled\nfrom it; a value it holds is never overwritten. The merged-away record is archived, not\ndeleted (``archive_contact(archived=false)`` restores it as a record of its own). Use this only for duplicates that already exist (``find_or_create_contact``\navoids making them), and never rename a duplicate instead: its interactions would stay on\nthe wrong record.",
+      "description": "Merge a duplicate contact into the one to keep, so two records of one person become one.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will\nbe kept (``target_id``) and which merged away (``source_id``), and call this only after\nthey say to proceed; never pick the duplicate on your own judgment. The kept contact takes\nevery interaction, signal and external reference of the other, and every deal naming the\nother as its contact; its empty fields are filled from it, and a value it holds is never\noverwritten. The merged-away record is archived, not\ndeleted (``archive_contact(archived=false)`` restores it as a record of its own). Use this only for duplicates that already exist (``find_or_create_contact``\navoids making them), and never rename a duplicate instead: its interactions would stay on\nthe wrong record.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2441,6 +2520,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2449,7 +2529,7 @@
     {
       "name": "merge_organizations",
       "title": "Merge Organizations",
-      "description": "Merge a duplicate organization into the one to keep, so two records of one company become one.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will\nbe kept (``target_id``) and which merged away (``source_id``), and call this only after\nthey say to proceed. The kept organization takes every contact, interaction, deal,\nexternal reference and lookalike of the other, and its empty fields are filled from it;\na value it holds is never overwritten. The merged-away record is archived, not deleted.\n``find_or_create_organization`` already prevents new duplicates by domain and name, so use\nthis for two that exist, such as two domains that turn out to be one company. Never\nrename a duplicate instead: its contacts would stay on the wrong record.",
+      "description": "Merge a duplicate organization into the one to keep, so two records of one company become one.\n\nALWAYS CONFIRM WITH THE USER BEFORE CALLING THIS. Show them both records, say which will\nbe kept (``target_id``) and which merged away (``source_id``), and call this only after\nthey say to proceed. The kept organization takes every contact, interaction, deal,\nsignal, proof point, external reference and lookalike of the other, and the signals\nfiled as evidence for the other; its empty fields are filled from it, and a value it\nholds is never overwritten. A signal both hold (the same source URL and type) is kept\nonce, with the purposes of both. The merged-away record is archived, not deleted.\n``find_or_create_organization`` already prevents new duplicates by domain and name, so use\nthis for two that exist, such as two domains that turn out to be one company. Never\nrename a duplicate instead: its contacts would stay on the wrong record.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2479,6 +2559,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2531,6 +2612,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2564,6 +2646,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2698,6 +2781,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2816,6 +2900,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -2851,6 +2936,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3090,6 +3176,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3237,6 +3324,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3406,6 +3494,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3590,6 +3679,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3702,6 +3792,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3777,6 +3868,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3858,6 +3950,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3918,6 +4011,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3963,6 +4057,7 @@
         "openWorldHint": false
       },
       "_meta": {
+        "openai/widgetAccessible": true,
         "fastmcp": {
           "tags": []
         }
@@ -3998,8 +4093,10 @@
       "description": "The CRM app, opening on the contacts list.",
       "mimeType": "text/html;profile=mcp-app",
       "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
         "ui": {
-          "csp": {}
+          "csp": {},
+          "prefersBorder": true
         },
         "fastmcp": {
           "tags": []
@@ -4012,8 +4109,10 @@
       "description": "The CRM app, opening on the deal pipeline.",
       "mimeType": "text/html;profile=mcp-app",
       "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
         "ui": {
-          "csp": {}
+          "csp": {},
+          "prefersBorder": true
         },
         "fastmcp": {
           "tags": []
@@ -4026,8 +4125,10 @@
       "description": "The CRM app, opening on the organizations list.",
       "mimeType": "text/html;profile=mcp-app",
       "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
         "ui": {
-          "csp": {}
+          "csp": {},
+          "prefersBorder": true
         },
         "fastmcp": {
           "tags": []
@@ -4040,8 +4141,10 @@
       "description": "The CRM app's settings: custom fields and pipeline stages.",
       "mimeType": "text/html;profile=mcp-app",
       "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
         "ui": {
-          "csp": {}
+          "csp": {},
+          "prefersBorder": true
         },
         "fastmcp": {
           "tags": []
@@ -4105,6 +4208,54 @@
       "description": "One signal as get_signal returns it: the claim, the quote, its source, and the source's and event's dates.",
       "mimeType": "application/json",
       "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_contacts_build",
+      "uriTemplate": "ui://people/contacts/{build}",
+      "description": "The CRM app's contacts view under a build key. Every key serves the current build.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
+        "ui": {
+          "csp": {},
+          "prefersBorder": true
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_opportunities_build",
+      "uriTemplate": "ui://people/opportunities/{build}",
+      "description": "The CRM app's deal pipeline under a build key. Every key serves the current build.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
+        "ui": {
+          "csp": {},
+          "prefersBorder": true
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_organizations_build",
+      "uriTemplate": "ui://people/organizations/{build}",
+      "description": "The CRM app's organizations view under a build key. Every key serves the current build.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
+        "ui": {
+          "csp": {},
+          "prefersBorder": true
+        },
         "fastmcp": {
           "tags": []
         }
