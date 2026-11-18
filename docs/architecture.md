@@ -165,10 +165,10 @@ visible to the model and to the app, and each description says which view it ope
 
 Two reads are left unbound because an agent calls them as lookups in the middle of other work,
 where a view would interrupt it. `list_opportunities` finds deals (its description sends "show
-the pipeline" to `get_pipeline`), and `get_contact` and `get_organization` carry their newest
-open deals, so showing a person or a company is one call and one view. The settings view is
-bound to no tool: its one natural read, `list_fields`, is a lookup an agent makes before
-filtering or setting a field. A host with placements opens settings by its URI.
+the pipeline" to `get_pipeline`), and `list_fields` is the lookup an agent makes before
+filtering or setting a field, so the settings view is bound to no tool; a host with placements
+opens settings by its URI. `get_contact` and `get_organization` carry their newest open deals,
+so showing a person or a company is one call and one view.
 
 **The app opens on what the call read.** `ui/src/launch.ts` reads the tool's name, input and
 result from the host: a `get_*` call opens its record (from the result's id, or from the

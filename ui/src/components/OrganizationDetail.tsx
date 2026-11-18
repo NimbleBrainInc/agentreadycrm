@@ -172,7 +172,6 @@ export function OrganizationDetail({
         <Dossier markdown={o.dossier} />
       </Stack>
 
-
       <Divider />
 
       <Stack gap="0.5rem">

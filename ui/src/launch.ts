@@ -1,8 +1,9 @@
 // What the host opened this view for. An MCP Apps host renders a view for the read tool bound to
 // it: `list_contacts` and `get_contact` open the contacts view, `list_organizations` and
-// `get_organization` the organizations view, `get_pipeline` and `get_opportunity` the deals. The host names the tool in `toolInfo` and delivers the call's
-// input and result; any of the three may be missing. A host that opens the view from its own
-// placement delivers none, and the view opens on its list.
+// `get_organization` the organizations view, `get_pipeline` and `get_opportunity` the deals.
+// The host names the tool in `toolInfo` and delivers the call's input and result; any of the
+// three may be missing. A host that opens the view from its own placement delivers none, and the
+// view opens on its list.
 
 /** What the view opens on: one record, a list searched for a query, or neither. */
 export interface LaunchTarget {
