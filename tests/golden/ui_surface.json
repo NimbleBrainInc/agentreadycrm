@@ -347,13 +347,6 @@
     },
     "list_opportunities": {
       "openai/widgetAccessible": true,
-      "ui": {
-        "resourceUri": "ui://people/opportunities/23bd0e567c8b",
-        "visibility": [
-          "model",
-          "app"
-        ]
-      },
       "fastmcp": {
         "tags": []
       }

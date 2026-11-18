@@ -82,7 +82,6 @@ BOUND = {
     "list_organizations": "organizations",
     "get_opportunity": "opportunities",
     "get_pipeline": "opportunities",
-    "list_opportunities": "opportunities",
 }
 
 #: What ChatGPT reads on a view resource and its build template, beside ``_meta.ui``.

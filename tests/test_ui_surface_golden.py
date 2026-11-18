@@ -112,7 +112,6 @@ BOUND = {
     "list_organizations": "organizations",
     "get_opportunity": "opportunities",
     "get_pipeline": "opportunities",
-    "list_opportunities": "opportunities",
 }
 
 

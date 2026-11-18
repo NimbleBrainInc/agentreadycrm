@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   useApp,
   useDataSync,
@@ -131,6 +131,17 @@ export default function App({ view }: { view: View }) {
     [view, openId, importing, listing, listState],
   );
 
+  // The list and every record share one scroll container, so a record opened from a list
+  // read partway down would open at the list's offset. A record and the import open at their
+  // top, and going back puts the list where the reader left it.
+  const scroller = useRef<HTMLDivElement>(null);
+  const listOffset = useRef(0);
+  const listingNow = useRef(true);
+  listingNow.current = listing;
+  useLayoutEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = listing ? listOffset.current : 0;
+  }, [openId, importing, listing]);
+
   const close = useCallback(() => {
     setOpenId(null);
     setOpenLabel(null);
@@ -174,7 +185,14 @@ export default function App({ view }: { view: View }) {
           add a second gutter around them. The pages scroll inside this one
           container, which is what the list's bar pins to. */}
           <AppFrame.Body bleed>
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            <div
+              ref={scroller}
+              data-scroller=""
+              onScroll={(e) => {
+                if (listingNow.current) listOffset.current = e.currentTarget.scrollTop;
+              }}
+              style={{ flex: 1, minHeight: 0, overflowY: "auto" }}
+            >
               {/* The list stays mounted under an open record, so going back lands on
             the same filter, sort and page. */}
               {/* Every view keeps its list mounted under an open record, so going
@@ -202,6 +220,7 @@ export default function App({ view }: { view: View }) {
                   onBack={close}
                   onLoaded={setOpenLabel}
                   onOpenOrganization={setOpenId}
+                  onOpenDeal={setOpenId}
                 />
               ) : null}
               {openId && openKind === "opportunity" ? (

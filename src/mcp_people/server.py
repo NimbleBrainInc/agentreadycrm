@@ -38,7 +38,9 @@ import os
 import sys
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, datetime
+from importlib.metadata import PackageNotFoundError, version
 from importlib.resources import files
 from typing import Annotated, Any, Literal, Required, TypedDict
 
@@ -104,6 +106,17 @@ from mcp_people.runtime import (
 from mcp_people.ui import VIEWS, load_ui
 
 SERVICE = "people"
+#: The distribution this package ships in, whose version the server reports.
+DISTRIBUTION = "agentreadycrm"
+
+
+def package_version() -> str:
+    """The installed ``agentreadycrm`` version, or ``dev`` when it is not installed."""
+    try:
+        return version(DISTRIBUTION)
+    except PackageNotFoundError:
+        return "dev"
+
 
 # Logs go to stderr only; stdout stays clean JSON-RPC for the stdio transport.
 logging.basicConfig(
@@ -202,8 +215,8 @@ skill://people-evidence/SKILL.md for more."""
 
 mcp: FastMCP = FastMCP(
     "Agent Ready CRM",
-    # The deployed version, which the deployment injects; "dev" for a local run.
-    version=os.environ.get("SERVICE_VERSION") or "dev",
+    # SERVICE_VERSION when a deployment sets it, else the installed package's version.
+    version=os.environ.get("SERVICE_VERSION") or package_version(),
     lifespan=_lifespan,
     # An exception no handler classified reaches the host as fixed text, never its message:
     # a tool returns its failures or raises one the error contract returns (below), and a
@@ -667,6 +680,27 @@ def _dossier_write(dossier: str | None, dossier_append: str | None) -> tuple[str
 
 #: How many of a record's newest interactions its ``get_*`` read carries.
 RECENT_INTERACTIONS = 5
+
+#: How many open deals a contact or organization read carries, newest first, and what each
+#: holds. ``list_opportunities`` lists the rest; a read answers "show me Jane" with her deals
+#: in one call.
+RECORD_OPEN_DEALS = 5
+_OPEN_DEAL_COLUMNS = ("title", "stage", "value", "currency")
+
+
+@dataclass(frozen=True)
+class _OpenDeals:
+    rows: list[dict[str, Any]]
+    total: int
+
+
+async def _open_deals(conn: Any, sctx: Any, **owner: str) -> _OpenDeals:
+    """The newest open deals on an account (``organization_id``) or naming a contact
+    (``primary_contact_id``), each with its address, and how many are open in all."""
+    page = await store.page_opportunities(
+        conn, sctx, columns=list(_OPEN_DEAL_COLUMNS), limit=RECORD_OPEN_DEALS, **owner
+    )
+    return _OpenDeals([_with_uri(row) for row in page.rows], page.total or 0)
 
 
 def _recent(interactions: list[Any]) -> list[dict[str, Any]]:
@@ -1752,6 +1786,9 @@ async def get_pipeline(
     won or lost) and its deals' count, value and weighted value. To read the deals
     themselves, use ``list_opportunities(stage=...)``.
 
+    A host that shows views opens the pipeline board for this call, so call it, not
+    ``list_opportunities``, to show the user their deals or pipeline.
+
     Args:
         organization_id: Count one account's deals only. Omit for the whole workspace.
         include_retired: Also list retired stages, after the live ones, each with its
@@ -2126,19 +2163,24 @@ async def list_fields(
 
 @mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("contacts"))
 async def get_contact(contact_id: str, ctx: Context | None = None) -> dict:
-    """Read one contact in full: fields, dossier, counts, external references and the 5 newest interactions.
+    """Read one contact in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.
 
     Call it when you hold a contact's id and need what is known about them before you act:
     before writing to them, before a call, or to answer a question about them. The 5 newest
     interactions come without their bodies; ``list_interactions(contact_id=...)`` pages
-    through all of them in full. To find a contact whose id you do not hold, use
+    through all of them in full. The 5 newest open deals naming them as their contact come
+    with their title, stage and value; ``list_opportunities(primary_contact_id=...)`` lists
+    every one. To find a contact whose id you do not hold, use
     ``list_contacts(query=...)``.
+
+    A host that shows views opens this contact for this call, with its open deals.
 
     Args:
         contact_id: The contact's id (ct_...).
 
     Returns:
-        {contact, counts, recent_interactions, external_refs, external_refs_total, next_step}.
+        {contact, counts, recent_interactions, open_opportunities, open_opportunities_total,
+        external_refs, external_refs_total, next_step}.
     """
     sctx = runtime().identity()
     try:
@@ -2150,6 +2192,7 @@ async def get_contact(contact_id: str, ctx: Context | None = None) -> dict:
             refs, refs_total = await store.external_refs_of(
                 conn, entity="contact", record_id=contact.id
             )
+            deals = await _open_deals(conn, sctx, primary_contact_id=contact.id)
     except ContactNotFoundError as exc:
         return await _handle_tool_error(sctx, entity="contact", action="get", exc=exc)
     except Exception as exc:  # noqa: BLE001 - final safety net; never a raw 500
@@ -2158,6 +2201,8 @@ async def get_contact(contact_id: str, ctx: Context | None = None) -> dict:
         "contact": dump(contact),
         "counts": counts,
         "recent_interactions": _recent(recent),
+        "open_opportunities": deals.rows,
+        "open_opportunities_total": deals.total,
         "external_refs": refs,
         "external_refs_total": refs_total,
         "next_step": (
@@ -2206,20 +2251,24 @@ async def resolve_external_refs(refs: list[str], ctx: Context | None = None) -> 
 
 @mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("organizations"))
 async def get_organization(organization_id: str, ctx: Context | None = None) -> dict:
-    """Read one organization in full: fields, dossier, counts, external references and the 5 newest interactions.
+    """Read one organization in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.
 
     Call it when you hold an organization's id and need what is known about the company
     before you act or answer. The 5 newest interactions, with anyone there, come without
     their bodies; ``list_interactions(organization_id=...)`` pages through all of them, and
-    ``list_contacts(organization_id=...)`` lists its people. To find an organization whose id
+    ``list_contacts(organization_id=...)`` lists its people. The 5 newest open deals on the
+    account come with their title, stage and value;
+    ``list_opportunities(organization_id=...)`` lists every one. To find an organization whose id
     you do not hold, use ``list_organizations(query=...)``.
+
+    A host that shows views opens this organization for this call, with its open deals.
 
     Args:
         organization_id: The organization's id (org_...).
 
     Returns:
-        {organization, counts, recent_interactions, external_refs, external_refs_total,
-        next_step}.
+        {organization, counts, recent_interactions, open_opportunities,
+        open_opportunities_total, external_refs, external_refs_total, next_step}.
     """
     sctx = runtime().identity()
     try:
@@ -2231,6 +2280,7 @@ async def get_organization(organization_id: str, ctx: Context | None = None) -> 
             refs, refs_total = await store.external_refs_of(
                 conn, entity="organization", record_id=org.id
             )
+            deals = await _open_deals(conn, sctx, organization_id=org.id)
     except OrganizationNotFoundError as exc:
         return await _handle_tool_error(sctx, entity="organization", action="get", exc=exc)
     except Exception as exc:  # noqa: BLE001 - final safety net; never a raw 500
@@ -2239,6 +2289,8 @@ async def get_organization(organization_id: str, ctx: Context | None = None) -> 
         "organization": dump(org),
         "counts": counts,
         "recent_interactions": _recent(recent),
+        "open_opportunities": deals.rows,
+        "open_opportunities_total": deals.total,
         "external_refs": refs,
         "external_refs_total": refs_total,
         "next_step": (
@@ -2320,6 +2372,9 @@ async def list_contacts(
     group, use ``count_records`` instead of walking the list; to read one contact in full,
     ``get_contact``. Archived contacts are left out unless ``include_archived``.
 
+    A host that shows views opens the contacts list for this call, so call it to show the
+    user their contacts.
+
     Args:
         query: Free text matched against name and email: split into words, each of which must
             appear in one of them, in any order ("matt calloway" finds "Matthew Calloway").
@@ -2391,6 +2446,9 @@ async def list_organizations(
     ``count_records``; to read one organization in full, ``get_organization``. Only active
     organizations are listed unless status or a filter asks for discovered lookalikes, and
     archived ones only with ``include_archived``.
+
+    A host that shows views opens the organizations list for this call, so call it to show
+    the user their companies.
 
     Args:
         query: Free text matched against name and domain: split into words, each of which must
@@ -2955,6 +3013,8 @@ async def get_opportunity(opportunity_id: str, ctx: Context | None = None) -> di
     pages through all of them in full. To find a deal whose id you do not hold, use
     ``list_opportunities(query=...)``.
 
+    A host that shows views opens this deal for this call.
+
     Args:
         opportunity_id: The deal's id (op_...).
 
@@ -2983,7 +3043,7 @@ async def get_opportunity(opportunity_id: str, ctx: Context | None = None) -> di
     }
 
 
-@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("opportunities"))
+@mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META)
 async def list_opportunities(
     query: str | None = None,
     organization_id: str | None = None,
@@ -3006,6 +3066,8 @@ async def list_opportunities(
     ``interactions.count`` and ``interactions.last_at``. Only open deals are listed unless
     stage, outcome or a filter on either says otherwise. For per-stage totals use
     ``get_pipeline``; to read one deal in full, ``get_opportunity``.
+
+    It opens no view: to show the user their pipeline, call ``get_pipeline``.
 
     Args:
         query: Free text matched against the deal's title and its account's name: split into

@@ -15,6 +15,7 @@ import {
 import { readAll, useCall } from "../api";
 import { DossierForm, EditContactForm, LogInteractionForm, MergeContactForm } from "../components/forms";
 import { Dossier, OverflowMenu } from "../components/kit";
+import { OpenDeals } from "../components/OpenDeals";
 import { fmtDate, markdownToHtml, statusTone } from "../format";
 import {
   type ApiError,
@@ -27,6 +28,7 @@ import {
   type Interaction,
   isApiError,
   type ListSignalsResult,
+  type OpenDeal,
   type Organization,
   type Signal,
 } from "../types";
@@ -40,6 +42,10 @@ const LANES = ["Emails", "Signals"];
 
 export interface Loaded {
   contact: Contact;
+  /** The newest open deals naming this person, as `get_contact` carries them. */
+  deals: OpenDeal[];
+  /** How many of their deals are open in all. */
+  dealsTotal: number;
   interactions: Interaction[];
   organization: Organization | null;
   signals: Signal[];
@@ -143,6 +149,7 @@ export function PersonPage({
   onBack,
   onLoaded,
   onOpenOrganization,
+  onOpenDeal,
   refreshKey = 0,
 }: {
   contactId: string;
@@ -154,6 +161,8 @@ export function PersonPage({
   /** The person's name once read, for the trail the app reports. */
   onLoaded: (name: string) => void;
   onOpenOrganization: (id: string) => void;
+  /** Open one of the person's deals, in place. */
+  onOpenDeal: (id: string) => void;
   /** A change re-reads the person in place, keeping any form open on the page. */
   refreshKey?: number;
 }) {
@@ -186,6 +195,8 @@ export function PersonPage({
     setError(null);
     setLoaded({
       contact: got.contact,
+      deals: got.open_opportunities ?? [],
+      dealsTotal: got.open_opportunities_total ?? 0,
       interactions: timeline,
       organization: org && !isApiError(org) ? org.organization : null,
       signals: [active, withdrawn].flatMap((r) => (r && !isApiError(r) ? r.signals : [])),
@@ -232,6 +243,7 @@ export function PersonPage({
       hostShowsTrail={hostShowsTrail}
       onBack={onBack}
       onOpenOrganization={onOpenOrganization}
+      onOpenDeal={onOpenDeal}
     />
   );
 }
@@ -242,12 +254,14 @@ function PersonView({
   hostShowsTrail,
   onBack,
   onOpenOrganization,
+  onOpenDeal,
 }: {
   loaded: Loaded;
   backLabel: string;
   hostShowsTrail: boolean;
   onBack: () => void;
   onOpenOrganization: (id: string) => void;
+  onOpenDeal: (id: string) => void;
 }) {
   const app = useApp();
   // The pane's own width decides the layout: the host may give this app a narrow split.
@@ -336,6 +350,10 @@ function PersonView({
               {c.lead_source ? <FieldLine label="Lead source">{c.lead_source}</FieldLine> : null}
               {c.source ? <FieldLine label="Source">{c.source}</FieldLine> : null}
               <FieldLine label="Added">{fmtDate(c.created_at)}</FieldLine>
+            </Section>
+
+            <Section title="Deals" count={loaded.dealsTotal}>
+              <OpenDeals deals={loaded.deals} total={loaded.dealsTotal} onOpen={onOpenDeal} />
             </Section>
 
           {org ? (

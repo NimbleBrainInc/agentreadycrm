@@ -5,14 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>People</title>
     <!--
-      The view's height floor. A host that gives a view a pane (a sidebar view, a fullscreen
-      frame) fills it, because html, body and #root are 100% of the frame. A host that renders
-      the view inline in a conversation sizes the frame to the height the document reports,
-      measured on <html>, and a document that is only 100% of its frame reports the frame's own
-      starting height back. A floor on <html> gives that host a view tall enough to show a list
-      or a record; a taller pane still fills.
+      The view's height. A host that gives a view a pane (a sidebar view, a fullscreen frame)
+      fills it, because html, body and #root are 100% of the frame. A host that renders the
+      view inline in a conversation sizes the frame to the height the document reports,
+      measured on <html> at max-content.
+      - The floor: a document that is only 100% of its frame reports the frame's own starting
+        height back, so a floor gives that host a view tall enough to show a list or a record.
+      - The ceiling: at max-content the content no longer scrolls inside the view, so a record
+        reports its whole height and the frame grows as it loads; a conversation kept scrolled
+        to its end then shows the record from partway down. The ceiling holds the measurement
+        at the floor, or at the frame's own height when that is taller, so an inline frame
+        stays put, the view scrolls inside it from the top, and a taller pane still fills.
     -->
-    <style>html { min-height: 600px; }</style>
+    <style>html { min-height: 600px; max-height: max(600px, 100vh); }</style>
   </head>
   <body>
     <div id="root"></div>

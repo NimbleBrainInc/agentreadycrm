@@ -295,15 +295,34 @@ export interface CountRecordsResult {
   next_step?: string;
 }
 
+/** One of a record's open deals as a contact or organization read carries it. */
+export interface OpenDeal {
+  id: string;
+  uri?: string;
+  title: string;
+  stage: string;
+  /** A decimal, which the wire may carry as a string. */
+  value?: number | string | null;
+  currency?: string | null;
+}
+
 export interface GetContactResult {
   contact: Contact;
   counts: Record<string, number>;
+  /** The newest open deals naming this person as their contact. */
+  open_opportunities?: OpenDeal[];
+  /** How many deals name them and are open, the ones carried included. */
+  open_opportunities_total?: number;
   next_step?: string;
 }
 
 export interface GetOrganizationResult {
   organization: Organization;
   counts: Record<string, number>;
+  /** The newest open deals on this account. */
+  open_opportunities?: OpenDeal[];
+  /** How many deals on the account are open, the ones carried included. */
+  open_opportunities_total?: number;
   next_step?: string;
 }
 

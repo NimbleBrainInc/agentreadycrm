@@ -26,12 +26,13 @@ describe("launchTarget", () => {
   it("opens a list searched for a list call's query", () => {
     expect(launchTarget("list_contacts", { query: " dana " }, { contacts: [] })).toEqual({ search: "dana" });
     expect(launchTarget("list_organizations", { query: "lark" }, null)).toEqual({ search: "lark" });
-    expect(launchTarget("list_opportunities", { query: "pilot" }, null)).toEqual({ search: "pilot" });
   });
 
   it("opens the plain list for a list call with no query, the pipeline, or no tool", () => {
     expect(launchTarget("list_contacts", { organization_id: "org_01A" }, { contacts: [] })).toBeNull();
     expect(launchTarget("get_pipeline", {}, { stages: [] })).toBeNull();
+    // A deal lookup opens no view; were a host to render one for it, the board opens as is.
+    expect(launchTarget("list_opportunities", { query: "pilot" }, null)).toBeNull();
     expect(launchTarget(undefined, null, null)).toBeNull();
     expect(launchTarget("get_contact", null, OPPORTUNITY)).toBeNull();
   });

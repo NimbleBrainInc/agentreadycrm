@@ -300,7 +300,6 @@ describe("a view an MCP Apps host renders for a tool call", () => {
   it.each([
     ["contact", "list_contacts"],
     ["organization", "list_organizations"],
-    ["opportunity", "list_opportunities"],
   ] as const)("the %s view opens its list searched for the %s query", async (view, tool) => {
     await rendered(view, tool, { query: "lark" }, { next_step: "x" });
     expect(shown()).toBeNull();
@@ -329,5 +328,41 @@ describe("a view an MCP Apps host renders for a tool call", () => {
     host.toolResult = { structuredContent: { contact: { id: "ct_01A" } } };
     await act(async () => root.render(createElement(App, { view: "contact" })));
     expect(shown()).toBeNull();
+  });
+});
+
+describe("the scroll position of the view", () => {
+  // jsdom lays nothing out, so the container's offset is a plain value the test sets.
+  const scroller = () => {
+    const el = container.querySelector<HTMLElement>("[data-scroller]")!;
+    if (!Object.getOwnPropertyDescriptor(el, "scrollTop")) {
+      let top = 0;
+      Object.defineProperty(el, "scrollTop", { get: () => top, set: (v: number) => { top = v; }, configurable: true });
+    }
+    return el;
+  };
+  const scrollListTo = async (top: number) => {
+    const el = scroller();
+    el.scrollTop = top;
+    await act(async () => el.dispatchEvent(new Event("scroll")));
+  };
+
+  it("opens a record at its top, though the list was read partway down", async () => {
+    await mount("contact");
+    await scrollListTo(480);
+    const open = container.querySelector("button");
+    await act(async () => open?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(shown()).toBe("person:ct_01A");
+    expect(scroller().scrollTop).toBe(0);
+  });
+
+  it("puts the list back where the reader left it, however far they read the record", async () => {
+    await mount("contact");
+    await scrollListTo(480);
+    await navigate("people://contacts/ct_01A");
+    await scrollListTo(120);
+    await navigate("ui://people/contacts");
+    expect(shown()).toBeNull();
+    expect(scroller().scrollTop).toBe(480);
   });
 });

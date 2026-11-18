@@ -999,7 +999,7 @@
     {
       "name": "get_contact",
       "title": "Get Contact",
-      "description": "Read one contact in full: fields, dossier, counts, external references and the 5 newest interactions.\n\nCall it when you hold a contact's id and need what is known about them before you act:\nbefore writing to them, before a call, or to answer a question about them. The 5 newest\ninteractions come without their bodies; ``list_interactions(contact_id=...)`` pages\nthrough all of them in full. To find a contact whose id you do not hold, use\n``list_contacts(query=...)``.",
+      "description": "Read one contact in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.\n\nCall it when you hold a contact's id and need what is known about them before you act:\nbefore writing to them, before a call, or to answer a question about them. The 5 newest\ninteractions come without their bodies; ``list_interactions(contact_id=...)`` pages\nthrough all of them in full. The 5 newest open deals naming them as their contact come\nwith their title, stage and value; ``list_opportunities(primary_contact_id=...)`` lists\nevery one. To find a contact whose id you do not hold, use\n``list_contacts(query=...)``.\n\nA host that shows views opens this contact for this call, with its open deals.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1039,7 +1039,7 @@
     {
       "name": "get_opportunity",
       "title": "Get Opportunity",
-      "description": "Read one deal in full: fields, dossier, counts and the 5 newest interactions logged against it.\n\nCall it when you hold a deal's id and need where it stands before you act or answer. The\n5 newest interactions come without their bodies; ``list_interactions(opportunity_id=...)``\npages through all of them in full. To find a deal whose id you do not hold, use\n``list_opportunities(query=...)``.",
+      "description": "Read one deal in full: fields, dossier, counts and the 5 newest interactions logged against it.\n\nCall it when you hold a deal's id and need where it stands before you act or answer. The\n5 newest interactions come without their bodies; ``list_interactions(opportunity_id=...)``\npages through all of them in full. To find a deal whose id you do not hold, use\n``list_opportunities(query=...)``.\n\nA host that shows views opens this deal for this call.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1079,7 +1079,7 @@
     {
       "name": "get_organization",
       "title": "Get Organization",
-      "description": "Read one organization in full: fields, dossier, counts, external references and the 5 newest interactions.\n\nCall it when you hold an organization's id and need what is known about the company\nbefore you act or answer. The 5 newest interactions, with anyone there, come without\ntheir bodies; ``list_interactions(organization_id=...)`` pages through all of them, and\n``list_contacts(organization_id=...)`` lists its people. To find an organization whose id\nyou do not hold, use ``list_organizations(query=...)``.",
+      "description": "Read one organization in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.\n\nCall it when you hold an organization's id and need what is known about the company\nbefore you act or answer. The 5 newest interactions, with anyone there, come without\ntheir bodies; ``list_interactions(organization_id=...)`` pages through all of them, and\n``list_contacts(organization_id=...)`` lists its people. The 5 newest open deals on the\naccount come with their title, stage and value;\n``list_opportunities(organization_id=...)`` lists every one. To find an organization whose id\nyou do not hold, use ``list_organizations(query=...)``.\n\nA host that shows views opens this organization for this call, with its open deals.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1119,7 +1119,7 @@
     {
       "name": "get_pipeline",
       "title": "Get Pipeline",
-      "description": "Read this workspace's deal pipeline: its stages in order, the deals in each, and the totals.\n\nCall it before moving or creating a deal, since ``move_opportunity`` and\n``create_opportunity`` take a stage key from this list and refuse any other, and to\nanswer how the pipeline stands (how many deals per stage, their value, how many won\nor lost). Each stage carries its key, label, default win probability, outcome (open,\nwon or lost) and its deals' count, value and weighted value. To read the deals\nthemselves, use ``list_opportunities(stage=...)``.",
+      "description": "Read this workspace's deal pipeline: its stages in order, the deals in each, and the totals.\n\nCall it before moving or creating a deal, since ``move_opportunity`` and\n``create_opportunity`` take a stage key from this list and refuse any other, and to\nanswer how the pipeline stands (how many deals per stage, their value, how many won\nor lost). Each stage carries its key, label, default win probability, outcome (open,\nwon or lost) and its deals' count, value and weighted value. To read the deals\nthemselves, use ``list_opportunities(stage=...)``.\n\nA host that shows views opens the pipeline board for this call, so call it, not\n``list_opportunities``, to show the user their deals or pipeline.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1528,7 +1528,7 @@
     {
       "name": "list_contacts",
       "title": "List Contacts",
-      "description": "List contacts: find people by name or email, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find a contact whose id you do not hold (``query``), or to read the people\nthat match: by organization, stage, lead source, or a ``filter`` on any field, including\ntheir organization's (``organization.fit``) and the rollups ``signals.active``,\n``interactions.count`` and ``interactions.last_at``. Pass ``columns`` when reading more\nthan a page, and follow ``next_cursor`` for the rest. To learn how many fall in each\ngroup, use ``count_records`` instead of walking the list; to read one contact in full,\n``get_contact``. Archived contacts are left out unless ``include_archived``.",
+      "description": "List contacts: find people by name or email, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find a contact whose id you do not hold (``query``), or to read the people\nthat match: by organization, stage, lead source, or a ``filter`` on any field, including\ntheir organization's (``organization.fit``) and the rollups ``signals.active``,\n``interactions.count`` and ``interactions.last_at``. Pass ``columns`` when reading more\nthan a page, and follow ``next_cursor`` for the rest. To learn how many fall in each\ngroup, use ``count_records`` instead of walking the list; to read one contact in full,\n``get_contact``. Archived contacts are left out unless ``include_archived``.\n\nA host that shows views opens the contacts list for this call, so call it to show the\nuser their contacts.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1810,7 +1810,7 @@
     {
       "name": "list_opportunities",
       "title": "List Opportunities",
-      "description": "List deals: find them by title or account, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find a deal whose id you do not hold (``query``), to check for an existing\ndeal before ``create_opportunity``, or to read the deals that match: by account, primary\ncontact, stage, outcome, or a ``filter`` on any field, including the account's\n(``organization.industry``), the primary contact's (``contact.title``) and the rollups\n``interactions.count`` and ``interactions.last_at``. Only open deals are listed unless\nstage, outcome or a filter on either says otherwise. For per-stage totals use\n``get_pipeline``; to read one deal in full, ``get_opportunity``.",
+      "description": "List deals: find them by title or account, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find a deal whose id you do not hold (``query``), to check for an existing\ndeal before ``create_opportunity``, or to read the deals that match: by account, primary\ncontact, stage, outcome, or a ``filter`` on any field, including the account's\n(``organization.industry``), the primary contact's (``contact.title``) and the rollups\n``interactions.count`` and ``interactions.last_at``. Only open deals are listed unless\nstage, outcome or a filter on either says otherwise. For per-stage totals use\n``get_pipeline``; to read one deal in full, ``get_opportunity``.\n\nIt opens no view: to show the user their pipeline, call ``get_pipeline``.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1950,13 +1950,6 @@
       },
       "_meta": {
         "openai/widgetAccessible": true,
-        "ui": {
-          "resourceUri": "ui://people/opportunities/<build>",
-          "visibility": [
-            "model",
-            "app"
-          ]
-        },
         "fastmcp": {
           "tags": []
         }
@@ -1965,7 +1958,7 @@
     {
       "name": "list_organizations",
       "title": "List Organizations",
-      "description": "List organizations: find companies by name or domain, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find an organization whose id you do not hold (``query``), or to read the\ncompanies that match: by industry, region, or a ``filter`` on any field, including the\nrollups ``contacts.count`` and ``signals.active``. Pass ``columns`` when reading more than\na page, and follow ``next_cursor`` for the rest. To learn how many fall in each group, use\n``count_records``; to read one organization in full, ``get_organization``. Only active\norganizations are listed unless status or a filter asks for discovered lookalikes, and\narchived ones only with ``include_archived``.",
+      "description": "List organizations: find companies by name or domain, or pull exactly the ones a task needs, a page at a time.\n\nCall it to find an organization whose id you do not hold (``query``), or to read the\ncompanies that match: by industry, region, or a ``filter`` on any field, including the\nrollups ``contacts.count`` and ``signals.active``. Pass ``columns`` when reading more than\na page, and follow ``next_cursor`` for the rest. To learn how many fall in each group, use\n``count_records``; to read one organization in full, ``get_organization``. Only active\norganizations are listed unless status or a filter asks for discovered lookalikes, and\narchived ones only with ``include_archived``.\n\nA host that shows views opens the organizations list for this call, so call it to show\nthe user their companies.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,

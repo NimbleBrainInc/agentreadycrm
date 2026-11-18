@@ -69,3 +69,15 @@ async def test_the_bundle_publishes_exactly_the_registered_tools() -> None:
 def test_the_bundle_places_nothing_in_a_nimblebrain_host() -> None:
     assert "ai.nimblebrain/host" not in json.dumps(MANIFEST)
     assert set(MANIFEST["_meta"]) == {"org.mpaktrust"}
+
+
+async def test_the_server_reports_the_package_version() -> None:
+    """serverInfo carries the installed distribution's version, the one the bundle pins."""
+    from importlib.metadata import version
+
+    from fastmcp import Client
+
+    async with Client(server.mcp) as client:
+        info = client.server_info
+    assert info is not None
+    assert info.version == version(PACKAGE["name"]) == PACKAGE["version"]

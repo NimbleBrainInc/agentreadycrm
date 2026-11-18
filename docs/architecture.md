@@ -150,27 +150,31 @@ anything but this server.
 
 Claude, ChatGPT and other MCP Apps hosts render a view for a tool call: the host renders the
 resource the called tool names in `_meta.ui.resourceUri`, inline in the conversation, and hands
-the view the call's input and result. Seven read tools are bound, each visible to the model and
-to the app:
+the view the call's input and result. A host renders a view for every call to a bound tool, so
+a tool is bound only where its call is the user asking to see something: six read tools, each
+visible to the model and to the app, and each description says which view it opens.
 
 | Tool | View | Opens on |
 |---|---|---|
 | `list_contacts` | contacts | The list, searching for the call's `query` |
-| `get_contact` | contacts | That contact |
+| `get_contact` | contacts | That contact, with its open deals |
 | `list_organizations` | organizations | The list, searching for the call's `query` |
-| `get_organization` | organizations | That organization |
-| `list_opportunities` | opportunities | The board, searching for the call's `query` |
+| `get_organization` | organizations | That organization, with its open deals |
 | `get_pipeline` | opportunities | The board |
 | `get_opportunity` | opportunities | That deal |
 
-The settings view is bound to no tool. Its one natural read, `list_fields`, is a lookup an agent
-makes before filtering or setting a field, and a settings editor rendered there would interrupt
-the work; a host with placements opens settings by its URI.
+Two reads are left unbound because an agent calls them as lookups in the middle of other work,
+where a view would interrupt it. `list_opportunities` finds deals (its description sends "show
+the pipeline" to `get_pipeline`), and `get_contact` and `get_organization` carry their newest
+open deals, so showing a person or a company is one call and one view. The settings view is
+bound to no tool: its one natural read, `list_fields`, is a lookup an agent makes before
+filtering or setting a field. A host with placements opens settings by its URI.
 
 **The app opens on what the call read.** `ui/src/launch.ts` reads the tool's name, input and
 result from the host: a `get_*` call opens its record (from the result's id, or from the
 input's until the result arrives), and a `list_*` call opens the list searched for its `query`.
-Each record opens once, so going back to the list stays there. Opened with no tool context (a
+Each record opens once, so going back to the list stays there. A record opens at its top, and
+going back puts the list where the reader left it. Opened with no tool context (a
 host's own placement), the view opens on its list. Every datum the view shows, it reads through
 the same tools, by way of the host.
 
@@ -192,8 +196,12 @@ holds it because other hosts check `ui.domain` against domains of their own.
 Each view asks for a border (`ui.prefersBorder`), which a host draws where the frame sits among
 other content, and its frame's content security policy allows no outside origin, since the
 bundle loads nothing from elsewhere. A host that renders a view inline sizes the frame to the
-height the document reports, so `<html>` carries a height floor that shows a list or a record;
-a taller pane still fills.
+height the document reports, measured on `<html>` at `max-content`, where the view's content no
+longer scrolls inside it. `<html>` carries a floor, so the frame shows a list or a record, and a
+ceiling of the floor or the frame's own height, so the frame does not grow to a record's whole
+length as it loads (a conversation kept scrolled to its end would then show the record from
+partway down). An inline view keeps the floor's height and scrolls inside; a taller pane still
+fills.
 
 ## Errors
 

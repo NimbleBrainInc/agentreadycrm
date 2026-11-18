@@ -142,7 +142,7 @@
     },
     {
       "name": "get_contact",
-      "description": "Read one contact with its counts, newest interactions and external references."
+      "description": "Read one contact with its counts, newest interactions, open deals and external references."
     },
     {
       "name": "resolve_external_refs",
@@ -150,7 +150,7 @@
     },
     {
       "name": "get_organization",
-      "description": "Read one organization with its counts, newest interactions and external references."
+      "description": "Read one organization with its counts, newest interactions, open deals and external references."
     },
     {
       "name": "list_contacts",

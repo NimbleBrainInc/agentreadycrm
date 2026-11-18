@@ -27,7 +27,7 @@ from surface_shape import SKILL_URIS, collect, normalized
 from mcp_people import server
 
 #: SHA-256 of the surface with its prose removed (see ``contract``).
-CONTRACT_SHA256 = "c6ee49223e68767dcf3a445e91d80936df347ba7820f152efc658858dd400f25"
+CONTRACT_SHA256 = "c832c4e7b8d380d36bb9179e955a72f49b3b4a5bf14462dc645f5a46d8e7a134"
 
 #: Names and mechanisms a client never reads. A generic CRM word ("workspace", an
 #: ``outbound`` direction, the ``enriched`` stage, a graph ``edge``) is not on it. One letter of
