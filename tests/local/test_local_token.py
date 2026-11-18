@@ -143,10 +143,12 @@ async def test_stdio_needs_no_token_and_makes_none(tmp_path: Path) -> None:
     assert not token_path(db).exists()
 
 
-def _get(port: int, path: str, **headers: str) -> tuple[int, str, dict[str, str]]:
+def _get(
+    port: int, path: str, method: str = "GET", **headers: str
+) -> tuple[int, str, dict[str, str]]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        conn.request("GET", path, headers=headers)
+        conn.request(method, path, headers=headers)
         response = conn.getresponse()
         return response.status, response.read().decode(), dict(response.getheaders())
     finally:
@@ -159,10 +161,13 @@ def test_the_server_card_needs_no_token_and_nothing_else_does(tmp_path: Path) ->
     with http_server(db) as port:
         card = _get(port, "/mcp/server-card")
         beside = [_get(port, path)[0] for path in ("/mcp", "/mcp/server-card/", "/server-card")]
+        posted = _get(port, "/mcp/server-card", method="POST")
         foreign = _get(port, "/mcp/server-card", Origin="https://attacker.example")
     status, body, _ = card
     assert status == 200
     assert json.loads(body)["name"] == "com.agentreadycrm/agentreadycrm"
     assert beside == [401, 401, 401]
+    # Only a GET skips the token.
+    assert posted[0] == 401
     # The loopback checks still run first.
     assert foreign[0] == 403
