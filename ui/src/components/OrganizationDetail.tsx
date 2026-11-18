@@ -18,17 +18,21 @@ import {
   type GetOrganizationResult,
   type Interaction,
   isApiError,
+  type OpenDeal,
   type Organization,
 } from "../types";
 
-/** What the page shows: the organization, its people and its history. */
+/** What the page shows: the organization, its open deals, its people and its history. */
 interface OrganizationView {
   organization: Organization;
+  deals: OpenDeal[];
+  dealsTotal: number;
   contacts: Contact[];
   interactions: Interaction[];
 }
 import { Dossier, FieldRow, Timeline } from "./kit";
 import { DossierForm, EditOrganizationForm } from "./forms";
+import { OpenDeals } from "./OpenDeals";
 import { SimilarCompanies } from "./SimilarCompanies";
 
 type Modal = null | "edit" | "dossier";
@@ -69,7 +73,13 @@ export function OrganizationDetail({
       return;
     }
     setError(null);
-    setData({ organization: res.organization, contacts: people, interactions: history });
+    setData({
+      organization: res.organization,
+      deals: res.open_opportunities ?? [],
+      dealsTotal: res.open_opportunities_total ?? 0,
+      contacts: people,
+      interactions: history,
+    });
   }, [call, organizationId]);
 
   // Overlapping re-reads can resolve out of order; only the latest one may land.
@@ -139,6 +149,13 @@ export function OrganizationDetail({
             {fmtDate(o.created_at)}
           </Text>
         </FieldRow>
+      </Stack>
+
+      <Divider />
+
+      <Stack gap="0.5rem">
+        <Heading size="sm">Deals ({data.dealsTotal})</Heading>
+        <OpenDeals deals={data.deals} total={data.dealsTotal} onOpen={onNavigate} />
       </Stack>
 
       <Divider />

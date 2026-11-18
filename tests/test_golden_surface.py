@@ -31,3 +31,19 @@ async def surface() -> dict[str, Any]:
 @pytest.mark.asyncio
 async def test_surface_matches_golden() -> None:
     assert normalized(await surface()) == json.loads(GOLDEN.read_text())
+
+
+def test_normalization_replaces_only_the_build_key() -> None:
+    from surface_shape import normalize_ui_build
+
+    assert (
+        normalize_ui_build('"ui://people/contacts/0123456789ab"')
+        == '"ui://people/contacts/<build>"'
+    )
+    for untouched in (
+        '"ui://people/contacts"',
+        '"ui://people/contacts/{build}"',
+        '"ui://people/contacts/0123456789abc"',
+        '"people://contacts/ct_0123456789ab"',
+    ):
+        assert normalize_ui_build(untouched) == untouched

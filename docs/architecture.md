@@ -94,8 +94,8 @@ while a live contact belongs to it, and, unless asked, while a live deal names i
 - **A deleted record holds no key.** Every unique index on these tables carries
   `deleted_at IS NULL`, so a new record may take the email, domain, name or reference a
   deleted one held.
-- **A link row that goes away is marked the same way**: a detached external reference, and a
-  lookalike edge a merge drops.
+- **A link row that goes away is marked the same way**: a detached external reference, a
+  lookalike edge a merge drops, and a duplicate signal a merge folds into the one kept.
 - **A vocabulary entry retires instead.** A custom field, a pipeline stage and a signal type
   carry `retired_at` and an optional replacement: records that hold the key still read it,
   and the key stays taken.
@@ -104,7 +104,16 @@ while a live contact belongs to it, and, unless asked, while a live deal names i
 
 **Archiving is the reversible hide.** `archive_contact` and `archive_organization` set
 `archived_at`, which takes a record out of the default listings and counts; `archived=false`
-brings it back. A merge archives its source. Erasing a person's data on request is an
+brings it back.
+
+**A merge moves everything onto the record kept, then archives its source.** A company's
+contacts, interactions, deals, signals, proof points, external references and lookalikes move,
+and each signal filed as evidence for the source becomes evidence for the record kept (the
+source's evidence row is kept as removed, so a reader of changes for either party sees the
+move). A signal both hold, with the same source URL and type, is kept once with the purposes of
+both; the other copy is marked, the target's unless only the source's is active. A person's
+interactions, the signals about them, the deals naming them as contact and their references
+move. Erasing a person's data on request is an
 administrative process outside the tools.
 
 ## The surface
@@ -127,14 +136,72 @@ anything but this server.
   address, `people://<kind>/<id>`, carried as `uri` on every record a tool returns. Each is a
   readable resource that runs the matching `get_*` tool under the caller's identity.
 - **Views.** `ui://people/contacts`, `organizations`, `opportunities` and `settings` are MCP
-  Apps resources, one self-contained HTML file with the view named on its root element. No
-  tool is bound to a view: a host opens one from its own placement or from a record's
-  address.
+  Apps resources, one self-contained HTML file with the view named on its root element. The
+  read tools bind the first three, so a host renders a view for the call (see
+  [MCP Apps hosts](#mcp-apps-hosts)); a host with placements of its own also opens a view by
+  its URI or a record by its address.
 - **Writes announce, reads don't.** A tool that changes stored data sends one
   `notifications/resources/list_changed`; a read sends none, even one that writes an audit
   row, or every view would refresh itself forever.
 - **Both protocol eras.** The server serves the 2026-07-28 era and the session-based eras from
   one process (`tests/test_era.py`, `tests/test_capabilities.py`).
+
+## MCP Apps hosts
+
+Claude, ChatGPT and other MCP Apps hosts render a view for a tool call: the host renders the
+resource the called tool names in `_meta.ui.resourceUri`, inline in the conversation, and hands
+the view the call's input and result. A host renders a view for every call to a bound tool, so
+a tool is bound only where its call is the user asking to see something: six read tools, each
+visible to the model and to the app, and each description says which view it opens.
+
+| Tool | View | Opens on |
+|---|---|---|
+| `list_contacts` | contacts | The list, searching for the call's `query` |
+| `get_contact` | contacts | That contact, with its open deals |
+| `list_organizations` | organizations | The list, searching for the call's `query` |
+| `get_organization` | organizations | That organization, with its open deals |
+| `get_pipeline` | opportunities | The board |
+| `get_opportunity` | opportunities | That deal |
+
+Two reads are left unbound because an agent calls them as lookups in the middle of other work,
+where a view would interrupt it. `list_opportunities` finds deals (its description sends "show
+the pipeline" to `get_pipeline`), and `list_fields` is the lookup an agent makes before
+filtering or setting a field, so the settings view is bound to no tool; a host with placements
+opens settings by its URI. `get_contact` and `get_organization` carry their newest open deals,
+so showing a person or a company is one call and one view.
+
+**The app opens on what the call read.** `ui/src/launch.ts` reads the tool's name, input and
+result from the host: a `get_*` call opens its record (from the result's id, or from the
+input's until the result arrives), and a `list_*` call opens the list searched for its `query`.
+Each record opens once, so going back to the list stays there. A record opens at its top, and
+going back puts the list where the reader left it. Opened with no tool context (a
+host's own placement), the view opens on its list. Every datum the view shows, it reads through
+the same tools, by way of the host.
+
+**The bound URI is keyed by the build.** Tools bind to `ui://people/<view>/<build>`, where
+`<build>` is the first 12 hex characters of the SHA-256 of the HTML that view serves. The HTML
+is read once at start, and that copy is hashed and served. A host may cache a `ui://` resource
+by its URI; with the hash in the URI, a new UI is a new URI, and a host fetches it instead of
+rendering a stale copy. A template per bound view resolves any key to the current UI, so a
+conversation or tool list that names an older build still renders. The listed resources keep
+their plain URIs, so a host placement that names one keeps working across builds.
+
+ChatGPT reads two keys of its own beside the MCP Apps ones, both defined in the OpenAI Apps SDK
+reference (<https://developers.openai.com/plugins/reference>). Every tool carries
+`openai/widgetAccessible: true`, since the views call reads and writes across the server from
+their frame. The view resources and their templates carry
+`openai/widgetDomain: "https://agentreadycrm.com"`, ChatGPT's alias for `ui.domain`; the alias
+holds it because other hosts check `ui.domain` against domains of their own.
+
+Each view asks for a border (`ui.prefersBorder`), which a host draws where the frame sits among
+other content, and its frame's content security policy allows no outside origin, since the
+bundle loads nothing from elsewhere. A host that renders a view inline sizes the frame to the
+height the document reports, measured on `<html>` at `max-content`, where the view's content no
+longer scrolls inside it. `<html>` carries a floor, so the frame shows a list or a record, and a
+ceiling of the floor or the frame's own height, so the frame does not grow to a record's whole
+length as it loads (a conversation kept scrolled to its end would then show the record from
+partway down). An inline view keeps the floor's height and scrolls inside; a taller pane still
+fills.
 
 ## Errors
 

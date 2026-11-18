@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "@nimblebraininc/agentreadycrm",
   "display_name": "Agent Ready CRM",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A CRM for AI agents: organizations, contacts, interactions, deals, signals and proof points, kept in one SQLite file on your own machine. No account, no cloud service.",
   "author": {
     "name": "NimbleBrain Inc",
@@ -86,11 +86,11 @@
     },
     {
       "name": "merge_contacts",
-      "description": "Merge a duplicate contact into the one to keep, moving its interactions and filling empty fields, after the user confirms."
+      "description": "Merge a duplicate contact into the one to keep, moving its interactions, signals and deals and filling empty fields, after the user confirms."
     },
     {
       "name": "merge_organizations",
-      "description": "Merge a duplicate organization into the one to keep, moving its contacts, interactions, deals and references, after the user confirms."
+      "description": "Merge a duplicate organization into the one to keep, moving its contacts, interactions, deals, evidence and references, after the user confirms."
     },
     {
       "name": "archive_contact",
@@ -142,7 +142,7 @@
     },
     {
       "name": "get_contact",
-      "description": "Read one contact with its counts, newest interactions and external references."
+      "description": "Read one contact with its counts, newest interactions, open deals and external references."
     },
     {
       "name": "resolve_external_refs",
@@ -150,7 +150,7 @@
     },
     {
       "name": "get_organization",
-      "description": "Read one organization with its counts, newest interactions and external references."
+      "description": "Read one organization with its counts, newest interactions, open deals and external references."
     },
     {
       "name": "list_contacts",

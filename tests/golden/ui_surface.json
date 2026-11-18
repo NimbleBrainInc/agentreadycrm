@@ -7,8 +7,10 @@
         "description": "The CRM app, opening on the contacts list.",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           },
           "fastmcp": {
             "tags": []
@@ -19,8 +21,10 @@
         "uri": "ui://people/contacts",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           }
         },
         "sha256": "29b12f5cd6d16b2dfa9c6819896d5df1347d09955fff4d5a08fc203badaa67db"
@@ -33,8 +37,10 @@
         "description": "The CRM app, opening on the deal pipeline.",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           },
           "fastmcp": {
             "tags": []
@@ -45,8 +51,10 @@
         "uri": "ui://people/opportunities",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           }
         },
         "sha256": "23bd0e567c8b6f0e2514ef67feae7509b66d8cf6fd622b6d5876846558889fef"
@@ -59,8 +67,10 @@
         "description": "The CRM app, opening on the organizations list.",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           },
           "fastmcp": {
             "tags": []
@@ -71,8 +81,10 @@
         "uri": "ui://people/organizations",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           }
         },
         "sha256": "9aef75dfbcdb733d8930d0fade925d792bdc60cc8278cd0f251852e8986a31e7"
@@ -85,8 +97,10 @@
         "description": "The CRM app's settings: custom fields and pipeline stages.",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           },
           "fastmcp": {
             "tags": []
@@ -97,242 +111,381 @@
         "uri": "ui://people/settings",
         "mimeType": "text/html;profile=mcp-app",
         "_meta": {
+          "openai/widgetDomain": "https://agentreadycrm.com",
           "ui": {
-            "csp": {}
+            "csp": {},
+            "prefersBorder": true
           }
         },
         "sha256": "810127c2cc7ed8606443f41df18feb1ed4bb2f54e1073197800fe32419e7a24b"
       }
     }
   ],
-  "ui_resource_templates": [],
+  "ui_resource_templates": [
+    {
+      "name": "people_ui_contacts_build",
+      "uriTemplate": "ui://people/contacts/{build}",
+      "description": "The CRM app's contacts view under a build key. Every key serves the current build.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
+        "ui": {
+          "csp": {},
+          "prefersBorder": true
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_opportunities_build",
+      "uriTemplate": "ui://people/opportunities/{build}",
+      "description": "The CRM app's deal pipeline under a build key. Every key serves the current build.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
+        "ui": {
+          "csp": {},
+          "prefersBorder": true
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "people_ui_organizations_build",
+      "uriTemplate": "ui://people/organizations/{build}",
+      "description": "The CRM app's organizations view under a build key. Every key serves the current build.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "openai/widgetDomain": "https://agentreadycrm.com",
+        "ui": {
+          "csp": {},
+          "prefersBorder": true
+        },
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ],
   "tool_meta": {
     "archive_contact": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "archive_organization": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "count_records": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "create_opportunity": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "define_field": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "define_pipeline_stage": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "define_signal_type": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "delete_contact": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "delete_organization": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "find_or_create_contact": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "find_or_create_organization": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "get_contact": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "resourceUri": "ui://people/contacts/29b12f5cd6d1",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
       "fastmcp": {
         "tags": []
       }
     },
     "get_opportunity": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "resourceUri": "ui://people/opportunities/23bd0e567c8b",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
       "fastmcp": {
         "tags": []
       }
     },
     "get_organization": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "resourceUri": "ui://people/organizations/9aef75dfbcdb",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
       "fastmcp": {
         "tags": []
       }
     },
     "get_pipeline": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "resourceUri": "ui://people/opportunities/23bd0e567c8b",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
       "fastmcp": {
         "tags": []
       }
     },
     "get_proof_point": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "get_signal": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "import_contacts": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "import_organizations": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "link_similar_organizations": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_contacts": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "resourceUri": "ui://people/contacts/29b12f5cd6d1",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
       "fastmcp": {
         "tags": []
       }
     },
     "list_fields": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_interactions": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_opportunities": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_organizations": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "resourceUri": "ui://people/organizations/9aef75dfbcdb",
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
       "fastmcp": {
         "tags": []
       }
     },
     "list_proof_points": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_signal_types": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_signals": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "list_similar_organizations": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "log_interaction": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "merge_contacts": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "merge_organizations": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "move_opportunity": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "promote_organization": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "record_proof_point": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "record_signal": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "resolve_external_refs": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_contact": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_field": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_opportunity": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_organization": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_pipeline_stage": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_signal": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "update_signal_type": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "verify_proof_point": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }
     },
     "withdraw_signal": {
+      "openai/widgetAccessible": true,
       "fastmcp": {
         "tags": []
       }

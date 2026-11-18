@@ -104,10 +104,23 @@ def test_the_ui_surface_matches_the_golden_file(mode: str, tmp_path: Path):
     assert take_surface(mode, tmp_path / "crm.db") == json.loads(GOLDEN.read_text(encoding="utf-8"))
 
 
+#: The read tools an MCP Apps host renders a view for, and the view each opens.
+BOUND = {
+    "get_contact": "contacts",
+    "list_contacts": "contacts",
+    "get_organization": "organizations",
+    "list_organizations": "organizations",
+    "get_opportunity": "opportunities",
+    "get_pipeline": "opportunities",
+}
+
+
 def test_the_golden_surface_is_the_four_views_of_one_bundle():
     """What the frozen file says, stated: four views, each the bundle with its view named on
-    the root element, so the four hashes differ; no tool names a view; and no record template
-    names one, so a host opens a record in the app's first view."""
+    the root element, so the four hashes differ; the read tools in ``BOUND`` name their view
+    under the build key of exactly the HTML it serves, and no other tool names one; each bound
+    view has a build template; ChatGPT's keys are on every view and every tool; and no record
+    template names a view, so a host opens a record in the app's first view."""
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     assert [r["listed"]["uri"] for r in golden["ui_resources"]] == [
         "ui://people/contacts",
@@ -120,6 +133,24 @@ def test_the_golden_surface_is_the_four_views_of_one_bundle():
     }
     assert {r["read"]["mimeType"] for r in golden["ui_resources"]} == {"text/html;profile=mcp-app"}
     assert len({r["read"]["sha256"] for r in golden["ui_resources"]}) == 4
-    assert golden["ui_resource_templates"] == []
-    assert not any("ui" in (meta or {}) for meta in golden["tool_meta"].values())
+    builds = {r["read"]["uri"]: r["read"]["sha256"][:12] for r in golden["ui_resources"]}
+
+    bound = {name: meta["ui"] for name, meta in golden["tool_meta"].items() if "ui" in (meta or {})}
+    assert set(bound) == set(BOUND)
+    for name, view in BOUND.items():
+        listed = f"ui://people/{view}"
+        assert bound[name] == {
+            "resourceUri": f"{listed}/{builds[listed]}",
+            "visibility": ["model", "app"],
+        }
+    assert [t["uriTemplate"] for t in golden["ui_resource_templates"]] == [
+        f"ui://people/{view}/{{build}}" for view in ("contacts", "opportunities", "organizations")
+    ]
+
+    domain = {"openai/widgetDomain": "https://agentreadycrm.com"}
+    for r in golden["ui_resources"]:
+        assert r["read"]["_meta"] == {**domain, "ui": {"csp": {}, "prefersBorder": True}}
+    for t in golden["ui_resource_templates"]:
+        assert t["_meta"]["openai/widgetDomain"] == domain["openai/widgetDomain"]
+    assert all(meta["openai/widgetAccessible"] is True for meta in golden["tool_meta"].values())
     assert set(golden["record_views"].values()) == {None}

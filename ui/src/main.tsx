@@ -22,7 +22,7 @@ const view = root.dataset.view ?? "contacts";
 
 createRoot(root).render(
   <StrictMode>
-    <AppProvider name="people" version="0.1.0" forwardKeys>
+    <AppProvider name="people" version="0.1.1" forwardKeys>
       {view === "settings" ? <FieldsSettings /> : <App view={VIEWS[view] ?? "contact"} />}
     </AppProvider>
   </StrictMode>,

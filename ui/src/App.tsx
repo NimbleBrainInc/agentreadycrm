@@ -1,5 +1,12 @@
-import { useCallback, useState } from "react";
-import { useDataSync, useModelContext, useTrail } from "@nimblebrain/synapse/react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useApp,
+  useDataSync,
+  useModelContext,
+  useToolInput,
+  useToolResult,
+  useTrail,
+} from "@nimblebrain/synapse/react";
 import { AppFrame, TextLink } from "@nimblebrain/synapse/ui";
 import { NewContactForm, NewOpportunityForm, NewOrganizationForm } from "./components/forms";
 import { OrganizationDetail } from "./components/OrganizationDetail";
@@ -8,6 +15,7 @@ import type { Entity } from "./people/schema";
 import { ImportPage } from "./people/ImportPage";
 import { OpportunityPage } from "./people/OpportunityPage";
 import { PersonPage } from "./people/PersonPage";
+import { launchTarget } from "./launch";
 import { kindOfId } from "./types";
 
 /** What a mount of the app shows. The host places each as its own sidebar entry. */
@@ -45,9 +53,11 @@ function recordUri(id: string): string {
 }
 
 /**
- * One view of People. The host's navigation chooses the view, so the app draws
- * no tabs of its own: it opens on the list its placement names, and a record
- * opened from that list is shown in place.
+ * One view of People. The host chooses the view, so the app draws no tabs of its own: it
+ * opens on the list its placement names, and a record opened from that list is shown in
+ * place. A host that renders the view for a tool call (Claude, ChatGPT, any MCP Apps host)
+ * hands it the call's input and result, and the view opens on what the call read: the record
+ * a `get_*` call read, or the list searched for a `list_*` call's query (`launch.ts`).
  */
 export default function App({ view }: { view: View }) {
   // A record of another kind opened from this view (a person from an
@@ -62,6 +72,31 @@ export default function App({ view }: { view: View }) {
   const [importing, setImporting] = useState(false);
   // The open record's name once it is read; the trail shows a placeholder until then.
   const [openLabel, setOpenLabel] = useState<string | null>(null);
+  // The query the list opens searching for, from the list call the view was rendered for.
+  const [search, setSearch] = useState<string | undefined>(undefined);
+
+  // Rendered for a tool call, the view opens on what it read. It opens each record once: going
+  // back to the list stays there, though the host may deliver the same result again. The
+  // input can name the record before the result arrives; the result then names the same one.
+  const app = useApp();
+  const toolInput = useToolInput();
+  const toolResult = useToolResult();
+  const toolName = app.toolInfo?.tool?.name;
+  const launchedFor = useRef<string | null>(null);
+  useEffect(() => {
+    const target = launchTarget(
+      typeof toolName === "string" ? toolName : undefined,
+      toolInput,
+      toolResult?.structuredContent,
+    );
+    if (target?.search) setSearch(target.search);
+    const id = target?.recordId;
+    if (!id || launchedFor.current === id) return;
+    launchedFor.current = id;
+    setImporting(false);
+    setOpenLabel(null);
+    setOpenId(id);
+  }, [toolName, toolInput, toolResult]);
 
   // People announces every write — the agent's, another view's, this one's — and the
   // view re-reads when it comes back after a while hidden, so an open record re-reads.
@@ -95,6 +130,17 @@ export default function App({ view }: { view: View }) {
           },
     [view, openId, importing, listing, listState],
   );
+
+  // The list and every record share one scroll container, so a record opened from a list
+  // read partway down would open at the list's offset. A record and the import open at their
+  // top, and going back puts the list where the reader left it.
+  const scroller = useRef<HTMLDivElement>(null);
+  const listOffset = useRef(0);
+  const listingNow = useRef(true);
+  listingNow.current = listing;
+  useLayoutEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = listing ? listOffset.current : 0;
+  }, [openId, importing, listing]);
 
   const close = useCallback(() => {
     setOpenId(null);
@@ -139,7 +185,14 @@ export default function App({ view }: { view: View }) {
           add a second gutter around them. The pages scroll inside this one
           container, which is what the list's bar pins to. */}
           <AppFrame.Body bleed>
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            <div
+              ref={scroller}
+              data-scroller=""
+              onScroll={(e) => {
+                if (listingNow.current) listOffset.current = e.currentTarget.scrollTop;
+              }}
+              style={{ flex: 1, minHeight: 0, overflowY: "auto" }}
+            >
               {/* The list stays mounted under an open record, so going back lands on
             the same filter, sort and page. */}
               {/* Every view keeps its list mounted under an open record, so going
@@ -147,6 +200,7 @@ export default function App({ view }: { view: View }) {
               <div hidden={!listing}>
                 <RecordList
                   entity={listed}
+                  search={search}
                   onOpen={setOpenId}
                   onState={setListState}
                   onNew={() => setNewOpen(true)}
@@ -166,6 +220,7 @@ export default function App({ view }: { view: View }) {
                   onBack={close}
                   onLoaded={setOpenLabel}
                   onOpenOrganization={setOpenId}
+                  onOpenDeal={setOpenId}
                 />
               ) : null}
               {openId && openKind === "opportunity" ? (

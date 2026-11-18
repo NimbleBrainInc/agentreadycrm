@@ -1705,6 +1705,8 @@ async def merge_contacts(
         Each interaction's denormalized ``organization_id`` is left as logged: it
         is historical attribution (the org the contact was at WHEN it happened),
         not a live edge that should follow the merge.
+      * **Repoints the signals about the source** (``signal.contact_id``) and the
+        deals naming it as their contact (``opportunity.primary_contact_id``).
       * **Fills target's EMPTY fields from source only** (email + its status,
         phone, title, organization_id, dossier + dossier_updated_at, lead_source,
         source, and each custom field the target does not hold) — it NEVER
@@ -1721,8 +1723,9 @@ async def merge_contacts(
     owner and a later ``find_or_create_contact`` on that address can never
     ON-CONFLICT-match the hidden archived row.
 
-    Returns ``(target, summary)`` where ``summary`` carries ``interactions_moved``
-    (count) and ``fields_filled`` (the list of target fields the source filled).
+    Returns ``(target, summary)`` where ``summary`` carries the ``interactions_moved``,
+    ``signals_moved``, ``opportunities_moved`` and ``refs_moved`` counts and
+    ``fields_filled`` (the list of target fields the source filled).
     """
     if target_id == source_id:
         raise ValueError("target_id and source_id must differ")
@@ -1770,6 +1773,13 @@ async def merge_contacts(
         .values(contact_id=target_id)
     )
     interactions_moved = moved.rowcount or 0
+    # The signals about the person, and the deals naming them as their contact, name the
+    # person kept now: left on the archived source, the keeper's reads would miss them and a
+    # deal would keep naming a hidden contact. No unique index holds either column.
+    signals_moved = await _repoint(conn, signal.c.contact_id, source_id, target_id)
+    opportunities_moved = await _repoint(
+        conn, opportunity.c.primary_contact_id, source_id, target_id
+    )
     # The source's external references name the person kept now; left on the archived
     # source, every later pull would match the hidden row.
     refs_moved = await _move_refs(conn, entity="contact", source_id=source_id, target_id=target_id)
@@ -1829,12 +1839,16 @@ async def merge_contacts(
             "source_id": source_id,
             "target_id": target_id,
             "interactions_moved": interactions_moved,
+            "signals_moved": signals_moved,
+            "opportunities_moved": opportunities_moved,
             "refs_moved": refs_moved,
             "fields_filled": fields_filled,
         },
     )
     return Contact.from_row(fresh, retired=await _retired_for(conn, "contact")), {
         "interactions_moved": interactions_moved,
+        "signals_moved": signals_moved,
+        "opportunities_moved": opportunities_moved,
         "refs_moved": refs_moved,
         "fields_filled": fields_filled,
     }
@@ -1879,6 +1893,16 @@ async def merge_organizations(
         ``uq_organization_edge``. Both are marked (``deleted_at``) BEFORE the
         repoint and keep their raw endpoints, score and source; the repoint moves
         live edges only, so it cannot raise. No edge row is removed.
+      * **Moves the evidence**: ``signal.organization_id``,
+        ``proof_point.organization_id``, and the party of each live
+        ``signal_evidence_for`` row. An evidence row is not repointed: the source's
+        is removed (``removed_at``) and the target's added or revived, so a reader
+        of changes filtered to either party sees the move.
+      * **Folds a signal the target already holds.** A source signal with the
+        target's source URL and type would duplicate it under ``uq_signal_source``.
+        One of the pair is marked (``deleted_at``) before the repoint, the
+        target's unless only the source's is still active, and its live evidence
+        rows are added to the one kept, so no purpose a signal served is lost.
       * **Fills the target's EMPTY fields from the source** — never overwriting,
         the same fill-empty rule the dedupe merge uses. ``dossier_updated_at``
         moves with ``dossier`` so the pair stays coherent.
@@ -1906,8 +1930,9 @@ async def merge_organizations(
     ``name`` is NOT NULL, so it can be made unique but not removed.
 
     Returns ``(target, summary)`` with ``contacts_moved`` / ``interactions_moved``
-    / ``opportunities_moved`` / ``edges_moved`` / ``edges_dropped`` counts and the
-    list of target fields the source filled.
+    / ``opportunities_moved`` / ``signals_moved`` / ``signals_dropped`` /
+    ``proof_points_moved`` / ``evidence_moved`` / ``edges_moved`` /
+    ``edges_dropped`` counts and the list of target fields the source filled.
     """
     if target_id == source_id:
         raise ValueError("target_id and source_id must differ")
@@ -1994,6 +2019,21 @@ async def merge_organizations(
         )
         moved[label] = res.rowcount or 0
 
+    # --- Evidence: whom signals serve, then duplicate signals, then the rows. --
+    # The parties move first, so a duplicate folded below hands the keeper edges that
+    # already name the target.
+    evidence_moved = await _move_evidence_party(conn, ctx, source_id=source_id, target_id=target_id)
+    signals_dropped = await _fold_duplicate_signals(
+        conn, ctx, source_id=source_id, target_id=target_id
+    )
+    # Live signals only: a folded duplicate keeps the organization it was recorded on.
+    moved["signals_moved"] = await _repoint(
+        conn, signal.c.organization_id, source_id, target_id, live_only=True
+    )
+    moved["proof_points_moved"] = await _repoint(
+        conn, proof_point.c.organization_id, source_id, target_id
+    )
+
     # --- Fill the target's empty fields from the source. ---------------------
     candidate: dict[str, Any] = {f: source_row.get(f) for f in _ORG_MERGE_FILL_FIELDS}
     updates = _merge_empty_only(target_row, candidate)
@@ -2039,6 +2079,8 @@ async def merge_organizations(
     fresh = await _org_row(conn, target_id)
     summary = {
         **moved,
+        "signals_dropped": signals_dropped,
+        "evidence_moved": evidence_moved,
         "refs_moved": refs_moved,
         "edges_moved": edges_moved,
         "edges_dropped": edges_dropped,
@@ -2065,6 +2107,108 @@ async def merge_organizations(
         },
     )
     return Organization.from_row(fresh, retired=await _retired_for(conn, "organization")), summary
+
+
+async def _repoint(
+    conn: AsyncConnection, column: Any, source_id: str, target_id: str, *, live_only: bool = False
+) -> int:
+    """Point every row of ``column``'s table that names ``source_id`` at ``target_id``; the
+    count. For a column no unique index holds, so the repoint cannot collide."""
+    table = column.table
+    statement = table.update().where(column == source_id)
+    if live_only:
+        statement = statement.where(_live(table))
+    return (await conn.execute(statement.values({column.name: target_id}))).rowcount or 0
+
+
+async def _move_evidence_party(
+    conn: AsyncConnection, ctx: Principal, *, source_id: str, target_id: str
+) -> int:
+    """Make each live signal that is evidence for ``source_id`` evidence for ``target_id``;
+    the count of edges moved.
+
+    The source's edge is removed (kept, with ``removed_at``) and the target's added, or
+    revived when the signal once served it, so a reader of changes filtered to either party
+    sees the move, and the signal's stamp moves. An edge already removed stays on the source,
+    the party it was removed from. A deleted signal's edges are left: no read returns it.
+    """
+    edge = signal_evidence_for.c
+    rows = await _all(
+        conn,
+        select(edge.signal_id, edge.added_by).where(
+            edge.for_organization_id == source_id,
+            edge.removed_at.is_(None),
+            _live_target(edge.signal_id, signal),
+        ),
+    )
+    for row in rows:
+        stamp = db_now(conn.dialect.name)
+        await conn.execute(
+            signal_evidence_for.update()
+            .where(
+                edge.signal_id == row["signal_id"],
+                edge.for_organization_id == source_id,
+                edge.removed_at.is_(None),
+            )
+            .values(removed_at=stamp, updated_at=stamp)
+        )
+        await _put_edge(conn, ctx, row["signal_id"], target_id, added_by=row["added_by"])
+        await _touch_signal(conn, row["signal_id"])
+    return len(rows)
+
+
+async def _fold_duplicate_signals(
+    conn: AsyncConnection, ctx: Principal, *, source_id: str, target_id: str
+) -> int:
+    """Fold each live source signal the target already holds (same source URL and type,
+    the ``uq_signal_source`` key) into one; the count marked.
+
+    The target's signal is kept unless it is withdrawn and the source's is not: an active
+    fact is never hidden behind a withdrawn copy of it. The other is marked (``deleted_at``)
+    and keeps its organization and values, and its live evidence edges are added to the one
+    kept, so every purpose the fact served survives the merge.
+    """
+    s = signal.alias("s")
+    t = signal.alias("t")
+    pairs = await _all(
+        conn,
+        select(
+            s.c.id.label("source_signal"),
+            s.c.status.label("source_status"),
+            t.c.id.label("target_signal"),
+            t.c.status.label("target_status"),
+        ).where(
+            s.c.organization_id == source_id,
+            s.c.deleted_at.is_(None),
+            t.c.tenant_id == s.c.tenant_id,
+            t.c.workspace_id == s.c.workspace_id,
+            t.c.organization_id == target_id,
+            t.c.source_url == s.c.source_url,
+            t.c.signal_type == s.c.signal_type,
+            t.c.deleted_at.is_(None),
+        ),
+    )
+    edge = signal_evidence_for.c
+    for pair in pairs:
+        keep, drop = pair["target_signal"], pair["source_signal"]
+        if pair["target_status"] == WITHDRAWN and pair["source_status"] != WITHDRAWN:
+            keep, drop = drop, keep
+        parties = await _all(
+            conn,
+            select(edge.for_organization_id, edge.added_by)
+            .where(edge.signal_id == drop, edge.removed_at.is_(None))
+            .order_by(edge.for_organization_id.asc().nulls_first()),
+        )
+        changed = [
+            await _put_edge(
+                conn, ctx, keep, party["for_organization_id"], added_by=party["added_by"]
+            )
+            for party in parties
+        ]
+        if any(changed):
+            await _touch_signal(conn, keep)
+        await _mark_deleted(conn, signal, signal.c.id == drop, _now())
+    return len(pairs)
 
 
 # --------------------------------------------------------------------------- #
@@ -7178,6 +7322,43 @@ async def _touch_signal(conn: AsyncConnection, signal_id: str) -> None:
     )
 
 
+async def _put_edge(
+    conn: AsyncConnection,
+    ctx: Principal,
+    signal_id: str,
+    party: str | None,
+    *,
+    added_by: str | None,
+) -> bool:
+    """Add a live edge from the signal to ``party``, or revive a removed one; whether it
+    changed. An edge already live is left as it is."""
+    edge = signal_evidence_for.c
+    stamp = db_now(conn.dialect.name)
+    stmt = (
+        insert_for(conn.dialect.name, signal_evidence_for)
+        .values(
+            **ctx.identity_columns(),
+            signal_id=signal_id,
+            for_organization_id=party,
+            added_by=added_by,
+            created_at=stamp,
+            updated_at=stamp,
+        )
+        .on_conflict_do_update(
+            index_elements=[
+                edge.tenant_id,
+                edge.workspace_id,
+                edge.signal_id,
+                _party_key(edge.for_organization_id),
+            ],
+            set_={"removed_at": None, "updated_at": stamp},
+            where=edge.removed_at.is_not(None),
+        )
+        .returning(edge.signal_id)
+    )
+    return (await conn.execute(stmt)).first() is not None
+
+
 async def _add_edges(
     conn: AsyncConnection,
     ctx: Principal,
@@ -7189,34 +7370,11 @@ async def _add_edges(
     """Add an edge per party to an active signal, reviving a removed one. Returns the
     parties that changed; the signal's stamp moves and the audit names them only if any
     did. An edge already live is left as it is."""
-    edge = signal_evidence_for.c
-    changed: list[str] = []
-    for party in parties:
-        stamp = db_now(conn.dialect.name)
-        stmt = (
-            insert_for(conn.dialect.name, signal_evidence_for)
-            .values(
-                **ctx.identity_columns(),
-                signal_id=row["id"],
-                for_organization_id=party,
-                added_by=added_by,
-                created_at=stamp,
-                updated_at=stamp,
-            )
-            .on_conflict_do_update(
-                index_elements=[
-                    edge.tenant_id,
-                    edge.workspace_id,
-                    edge.signal_id,
-                    _party_key(edge.for_organization_id),
-                ],
-                set_={"removed_at": None, "updated_at": stamp},
-                where=edge.removed_at.is_not(None),
-            )
-            .returning(edge.signal_id)
-        )
-        if (await conn.execute(stmt)).first() is not None:
-            changed.append(_party_wire(party))
+    changed = [
+        _party_wire(party)
+        for party in parties
+        if await _put_edge(conn, ctx, row["id"], party, added_by=added_by)
+    ]
     if changed:
         await _touch_signal(conn, row["id"])
         await write_audit(
