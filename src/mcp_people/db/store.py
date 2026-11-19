@@ -138,7 +138,7 @@ from mcp_people.pipeline import (
     normalize_stage_key,
 )
 from mcp_people.refs import MAX_REFS_PER_LOOKUP, MAX_REFS_SHOWN, clean_refs
-from mcp_people.runtime import Principal
+from mcp_people.runtime import Limits, Principal
 from mcp_people.signal_types import (
     MAX_SIGNAL_TYPES,
     clean_signal_type_description,
@@ -149,6 +149,8 @@ from mcp_people.signal_types import (
 __all__ = [
     "ConflictError",
     "ContactNotFoundError",
+    "LimitExceededError",
+    "limit_next_step",
     "Page",
     "OpportunityNotFoundError",
     "OrganizationNotFoundError",
@@ -337,6 +339,194 @@ class RefConflictError(ConflictError):
         self.message = message
         self.next_step = next_step
         self.retryable = retryable
+
+
+#: What the next step of every limit refusal ends with: the local install has no limits.
+_NO_LIMITS = "Or run Agent Ready CRM locally (free, no limits): uvx agentreadycrm."
+
+
+def _count_of(n: int, noun: str) -> str:
+    """``n`` and ``noun``, plural unless ``n`` is 1: ``1 contact``, ``50 contacts``."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+#: Each counted limit's noun, and what frees room under it (``None`` for a lifetime
+#: allowance, which nothing frees).
+_LIMIT_WORDS: dict[str, tuple[str, str | None]] = {
+    "max_contacts": (
+        "contact",
+        "Delete contacts no longer worked, and duplicates already merged away, with "
+        "delete_contact to free room, then retry; an archived contact counts until deleted, "
+        "and so does the duplicate a merge archives.",
+    ),
+    "max_contacts_created": ("contact", None),
+    "max_organizations": (
+        "organization",
+        "Delete organizations no longer worked, discovered lookalikes you will not pursue, "
+        "and duplicates already merged away, with delete_organization to free room, then "
+        "retry; an archived organization counts until deleted, and so does the duplicate a "
+        "merge archives.",
+    ),
+    "max_organizations_created": ("organization", None),
+    "max_opportunities": (
+        "deal",
+        "Deleting an organization with delete_organization deletes its deals and frees room; "
+        "a won or lost deal still counts. Keep updating the deals there are with "
+        "update_opportunity and move_opportunity.",
+    ),
+    "max_interactions": ("interaction", None),
+    "max_signals": ("signal", None),
+    "max_proof_points": ("proof point", None),
+    "max_custom_fields": ("custom field", None),
+    "max_pipeline_stages": ("pipeline stage", None),
+    "max_signal_types": ("signal type", None),
+}
+
+#: What a lifetime allowance's refusal says stays usable, by limit.
+_LIFETIME_KEEPS = {
+    "max_contacts_created": "Every contact it holds stays readable and editable.",
+    "max_organizations_created": "Every organization it holds stays readable and editable.",
+    "max_interactions": "Every interaction it holds stays readable with list_interactions.",
+    "max_signals": "Every signal it holds stays readable with list_signals.",
+    "max_proof_points": "Every proof point it holds stays readable with list_proof_points.",
+    "max_custom_fields": (
+        "Every field it defines stays usable; update_field changes one, and a retired field's "
+        "key stays taken."
+    ),
+    "max_pipeline_stages": (
+        "Every stage it defines stays usable; update_pipeline_stage relabels or reorders one."
+    ),
+    "max_signal_types": ("Every type it defines stays usable; update_signal_type relabels one."),
+}
+
+
+class LimitExceededError(ValueError):
+    """The write would take the caller's account past one of its
+    :class:`~mcp_people.runtime.Limits`.
+
+    A count is checked inside the write's transaction after the change, so leaving the
+    session with it rolls back everything the write did; a size is checked before the write.
+    ``limit`` names the :class:`~mcp_people.runtime.Limits` field and ``maximum`` its value;
+    ``message`` is the refusal, ``next_step`` what frees room, and ``reason`` what an import
+    reports for a row it skips under the limit.
+
+    It is a ``ValueError`` because it is a refusal of the request, answered as
+    ``invalid_request``: every path that answers a bad argument answers it, and an import
+    skips a row for it as it skips a row for a bad value.
+    """
+
+    def __init__(self, limit: str, maximum: int, *, size: int | None = None) -> None:
+        self.limit = limit
+        self.maximum = maximum
+        if limit == "max_dossier_bytes":
+            self.reason = (
+                f"the dossier would be {_count_of(size or 0, 'byte')}, over this account's "
+                f"limit of {_count_of(maximum, 'byte')} per dossier"
+            )
+        elif limit == "max_import_rows":
+            self.reason = (
+                f"this account's imports take at most {_count_of(maximum, 'row')} per call, and "
+                f"this one has {size}"
+            )
+        elif _LIMIT_WORDS[limit][1] is None:
+            noun = _LIMIT_WORDS[limit][0]
+            self.reason = (
+                f"this account has used its lifetime allowance of {_count_of(maximum, noun)}"
+            )
+        else:
+            noun = _LIMIT_WORDS[limit][0]
+            self.reason = f"this account is at its limit of {_count_of(maximum, noun)}"
+        self.next_step = limit_next_step(limit)
+        self.message = f"{self.reason[0].upper()}{self.reason[1:]} ({limit}). Nothing was changed."
+        super().__init__(self.message)
+
+
+def limit_next_step(limit: str) -> str:
+    """What frees room under ``limit``, a :class:`~mcp_people.runtime.Limits` field, or that
+    nothing does; it ends by naming the local install, which has no limits."""
+    if limit == "max_dossier_bytes":
+        return (
+            "Shorten the dossier to fit the limit and write it whole with dossier, or keep long "
+            f"material elsewhere and link to it. {_NO_LIMITS}"
+        )
+    if limit == "max_import_rows":
+        return f"Split the list into smaller parts and import each part. {_NO_LIMITS}"
+    frees = _LIMIT_WORDS[limit][1]
+    if frees is None:
+        return (
+            "Deleting, merging or retiring does not free this allowance. "
+            f"{_LIFETIME_KEEPS[limit]} {_NO_LIMITS}"
+        )
+    return f"{frees} {_NO_LIMITS}"
+
+
+#: Prefix of the lock every write a limit counts serializes on, keyed by account.
+_LIMITS_LOCK = "people:limits:"
+
+
+async def _hold_limits_lock(conn: AsyncConnection, ctx: Principal, limits: Limits | None) -> None:
+    """Take the account's limits lock when the caller is limited.
+
+    A write a limit counts takes it before it writes anything, so it never waits for the
+    lock while holding a row another limited write of the account waits on. It is held to the
+    end of the transaction; taking it again is free.
+    """
+    if limits is not None:
+        await dialect.serialize_on(conn, _LIMITS_LOCK + ctx.tenant_id)
+
+
+#: The table each counted limit counts, and whether it counts only rows not deleted.
+_COUNTED: dict[str, tuple[Any, bool]] = {
+    "max_contacts": (contact, True),
+    "max_contacts_created": (contact, False),
+    "max_organizations": (organization, True),
+    "max_organizations_created": (organization, False),
+    "max_opportunities": (opportunity, True),
+    "max_interactions": (interaction, False),
+    "max_signals": (signal, False),
+    "max_proof_points": (proof_point, False),
+    "max_custom_fields": (field_def, False),
+    "max_pipeline_stages": (pipeline_stage, False),
+    "max_signal_types": (signal_type_table, False),
+}
+
+#: The counted limits a create of each kind is checked against, lifetime first: when both
+#: are over, freeing live room would not help, so the refusal names the lifetime one.
+_CONTACT_LIMITS = ("max_contacts_created", "max_contacts")
+_ORGANIZATION_LIMITS = ("max_organizations_created", "max_organizations")
+
+
+async def _enforce_limits(
+    conn: AsyncConnection, ctx: Principal, limits: Limits | None, names: Sequence[str]
+) -> None:
+    """Raise :class:`LimitExceededError` when, after this transaction's create, the caller's
+    account holds more than ``limits`` allow under any of ``names``.
+
+    The count is of the account's rows the session can see, so row-level security still
+    applies, and it runs after the create, so it includes it. The account's limits lock comes
+    first, so a concurrent limited write that took it earlier has committed and is counted.
+    """
+    if limits is None:
+        return
+    checks = [(name, getattr(limits, name)) for name in names]
+    checks = [(name, maximum) for name, maximum in checks if maximum is not None]
+    if not checks:
+        return
+    await _hold_limits_lock(conn, ctx, limits)
+    for name, maximum in checks:
+        table, live_only = _COUNTED[name]
+        predicate = table.c.tenant_id == ctx.tenant_id
+        if live_only:
+            predicate = and_(predicate, _live(table))
+        if await _count(conn, table, predicate) > maximum:
+            raise LimitExceededError(name, maximum)
+
+
+def _check_import_rows(rows: Sequence[Any], limits: Limits | None) -> None:
+    """Refuse an import longer than ``limits.max_import_rows`` whole, before any row runs."""
+    if limits is not None and limits.max_import_rows is not None:
+        if len(rows) > limits.max_import_rows:
+            raise LimitExceededError("max_import_rows", limits.max_import_rows, size=len(rows))
 
 
 # --------------------------------------------------------------------------- #
@@ -691,6 +881,7 @@ async def find_or_create_organization(
     fields: Mapping[str, Any] | None = None,
     fields_by: str | None = None,
     external_refs: Sequence[str] | None = None,
+    limits: Limits | None = None,
 ) -> tuple[Organization, str, bool]:
     """Dedupe-or-create an organization, then fill its custom ``fields``.
 
@@ -699,7 +890,10 @@ async def find_or_create_organization(
     whatever its domain or name say. The refs it does not hold yet are then attached.
     ``fields`` follows the same fill-empty rule as every other argument here: a key the
     organization already holds is left alone (``update_organization`` overwrites).
+
+    A create counts toward ``limits`` (:class:`LimitExceededError`); a match never does.
     """
+    await _hold_limits_lock(conn, ctx, limits)
     refs = clean_refs(external_refs)
     patch = await _field_fill_patch(conn, entity="organization", submitted=fields, by=fields_by)
     for attempt in (1, 2):
@@ -734,6 +928,8 @@ async def find_or_create_organization(
             if attempt == 1 and exc.retryable:
                 continue
             raise
+    if action == "created":
+        await _enforce_limits(conn, ctx, limits, _ORGANIZATION_LIMITS)
     new_keys = [k for k in patch if k not in (org.fields or {})]
     if new_keys:
         await conn.execute(
@@ -1113,6 +1309,7 @@ async def find_or_create_contact(
     fields: Mapping[str, Any] | None = None,
     fields_by: str | None = None,
     external_refs: Sequence[str] | None = None,
+    limits: Limits | None = None,
 ) -> tuple[Contact, str, bool]:
     """Dedupe-or-create a contact, then fill its email status and custom ``fields``.
 
@@ -1121,7 +1318,12 @@ async def find_or_create_contact(
     does not hold yet are then attached. ``email_status`` and ``fields`` follow the same
     fill-empty rule as every other argument here: a status the contact already has, or a
     key it already holds, is left alone (``update_contact`` overwrites).
+
+    A created contact counts toward ``limits``, and so does an organization the call creates
+    to wire the contact to, even when the contact itself is a match
+    (:class:`LimitExceededError`).
     """
+    await _hold_limits_lock(conn, ctx, limits)
     refs = clean_refs(external_refs)
     graded = _email_grade(email_status, email_checked_at)
     patch = await _field_fill_patch(conn, entity="contact", submitted=fields, by=fields_by)
@@ -1143,6 +1345,7 @@ async def find_or_create_contact(
                     source=source,
                     status=status,
                     match_id=held,
+                    limits=limits,
                 )
                 if refs and held is None and action == "matched" and normalize_email(email) is None:
                     await _refuse_name_only_match(
@@ -1161,6 +1364,8 @@ async def find_or_create_contact(
             if attempt == 1 and exc.retryable:
                 continue
             raise
+    if action == "created":
+        await _enforce_limits(conn, ctx, limits, _CONTACT_LIMITS)
     sets: dict[str, Any] = {}
     if graded is not None:
         if found.email is None:
@@ -1206,6 +1411,7 @@ async def _find_or_create_contact(
     source: str | None = None,
     status: str | None = None,
     match_id: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[Contact, str, bool]:
     """Dedupe-or-create a contact — the idempotent upsert the ecosystem leans on.
 
@@ -1278,7 +1484,7 @@ async def _find_or_create_contact(
         resolved: str | None = None
         if org_name is not None:
             org, _action, promoted = await find_or_create_organization(
-                conn, ctx, name=org_name, domain=org_domain, source=source
+                conn, ctx, name=org_name, domain=org_domain, source=source, limits=limits
             )
             resolved = org.id
             if promoted:
@@ -2795,6 +3001,8 @@ def _skip_reason(exc: Exception) -> str:
         return "a value the database cannot store"
     if isinstance(exc, RefConflictError):
         return exc.message[:_CAP_SKIP_REASON]
+    if isinstance(exc, LimitExceededError):
+        return f"{exc.reason} ({exc.limit})"[:_CAP_SKIP_REASON]
     reason = str(exc) or type(exc).__name__
     return reason[:_CAP_SKIP_REASON]
 
@@ -2807,10 +3015,17 @@ def _check_import_size(rows: Sequence[Any]) -> None:
         )
 
 
-def _groups(by_reason: Mapping[str, list[int]]) -> list[dict[str, Any]]:
+def _groups(
+    by_reason: Mapping[str, list[int]], limited: Mapping[str, str] | None = None
+) -> list[dict[str, Any]]:
     """``[{reason, rows}]``, the first :data:`_MAX_REASON_GROUPS` reasons by name and the
-    rest folded into one."""
-    groups = [{"reason": r, "rows": rows} for r, rows in by_reason.items()]
+    rest folded into one. A reason in ``limited`` is a limit's, and its group carries the
+    :class:`~mcp_people.runtime.Limits` field as ``limit``."""
+    limited = limited or {}
+    groups: list[dict[str, Any]] = [
+        {"reason": r, "rows": rows, **({"limit": limited[r]} if r in limited else {})}
+        for r, rows in by_reason.items()
+    ]
     if len(groups) <= _MAX_REASON_GROUPS:
         return groups
     head, tail = groups[: _MAX_REASON_GROUPS - 1], groups[_MAX_REASON_GROUPS - 1 :]
@@ -2884,6 +3099,7 @@ async def import_organizations(
     rows: Sequence[Any],
     source: str | None = "import",
     fields_by: str | None = None,
+    limits: Limits | None = None,
 ) -> dict[str, Any]:
     """Find-or-create each row as an organization; the batch form of the tool.
 
@@ -2896,10 +3112,17 @@ async def import_organizations(
     over its cap, an undefined field) is rolled back and reported under its reason
     by its index; the rest commit together. A row with no ``name`` is named by its
     domain, and a row with neither is skipped.
+
+    Under ``limits``, an import longer than ``max_import_rows`` is refused whole, and a row
+    that would create past a count is skipped under a reason naming the limit
+    (:func:`_skip_reason`) while the rest commit.
     """
     _check_import_size(rows)
+    _check_import_rows(rows, limits)
+    await _hold_limits_lock(conn, ctx, limits)
     counts = {"created": 0, "matched": 0, "promoted": 0}
     skipped: dict[str, list[int]] = {}
+    limited: dict[str, str] = {}
     kept: dict[str, list[int]] = {}
     for index, raw in enumerate(rows):
         try:
@@ -2914,7 +3137,7 @@ async def import_organizations(
                 args["name"] = (await _org_row(conn, held_id))["name"]
             async with conn.begin_nested():
                 org, action, promoted = await find_or_create_organization(
-                    conn, ctx, **args, source=source, fields_by=fields_by
+                    conn, ctx, **args, source=source, fields_by=fields_by, limits=limits
                 )
                 held = (
                     await _kept_keys(
@@ -2929,13 +3152,16 @@ async def import_organizations(
                     else []
                 )
         except _ROW_ERRORS as exc:
-            skipped.setdefault(_skip_reason(exc), []).append(index)
+            reason = _skip_reason(exc)
+            skipped.setdefault(reason, []).append(index)
+            if isinstance(exc, LimitExceededError):
+                limited[reason] = exc.limit
             continue
         counts[action] += 1
         counts["promoted"] += int(promoted)
         for key in held:
             kept.setdefault(f"matched an organization that keeps its own {key}", []).append(index)
-    return await _import_done(conn, ctx, "organization", len(rows), counts, kept, skipped)
+    return await _import_done(conn, ctx, "organization", len(rows), counts, kept, skipped, limited)
 
 
 async def import_contacts(
@@ -2945,6 +3171,7 @@ async def import_contacts(
     rows: Sequence[Any],
     source: str | None = "import",
     fields_by: str | None = None,
+    limits: Limits | None = None,
 ) -> dict[str, Any]:
     """Find-or-create each row as a contact; the batch form of the tool.
 
@@ -2955,11 +3182,15 @@ async def import_contacts(
     ``status`` is one of the contact lifecycle's statuses.
 
     Each row runs in its own savepoint, so a row that fails after its contact was
-    written (an ``email_status`` with no address) leaves nothing behind.
+    written (an ``email_status`` with no address) leaves nothing behind. ``limits`` binds
+    as in :func:`import_organizations`, for the contacts and organizations a row creates.
     """
     _check_import_size(rows)
+    _check_import_rows(rows, limits)
+    await _hold_limits_lock(conn, ctx, limits)
     counts = {"created": 0, "matched": 0, "promoted": 0}
     skipped: dict[str, list[int]] = {}
+    limited: dict[str, str] = {}
     kept: dict[str, list[int]] = {}
     statuses = tuple(LADDER)
     for index, raw in enumerate(rows):
@@ -2974,7 +3205,7 @@ async def import_contacts(
                 args["email_status"] = args["email_status"].lower()
             async with conn.begin_nested():
                 found, action, promoted = await find_or_create_contact(
-                    conn, ctx, **args, source=source, fields_by=fields_by
+                    conn, ctx, **args, source=source, fields_by=fields_by, limits=limits
                 )
                 held = (
                     await _kept_keys(
@@ -2991,13 +3222,16 @@ async def import_contacts(
                 if action == "matched" and await _keeps_another_organization(conn, args, found):
                     held.append("organization")
         except _ROW_ERRORS as exc:
-            skipped.setdefault(_skip_reason(exc), []).append(index)
+            reason = _skip_reason(exc)
+            skipped.setdefault(reason, []).append(index)
+            if isinstance(exc, LimitExceededError):
+                limited[reason] = exc.limit
             continue
         counts[action] += 1
         counts["promoted"] += int(promoted)
         for key in held:
             kept.setdefault(f"matched a contact that keeps its own {key}", []).append(index)
-    return await _import_done(conn, ctx, "contact", len(rows), counts, kept, skipped)
+    return await _import_done(conn, ctx, "contact", len(rows), counts, kept, skipped, limited)
 
 
 async def _import_done(
@@ -3008,6 +3242,7 @@ async def _import_done(
     counts: Mapping[str, int],
     kept: Mapping[str, list[int]],
     skipped: Mapping[str, list[int]],
+    limited: Mapping[str, str],
 ) -> dict[str, Any]:
     """The import's result, and its one summary audit row beside the per-row ones."""
     n_skipped = sum(map(len, skipped.values()))
@@ -3019,7 +3254,12 @@ async def _import_done(
         outcome="ok",
         detail={**counts, "received": received, "skipped": n_skipped},
     )
-    return {"received": received, **counts, "kept": _groups(kept), "skipped": _groups(skipped)}
+    return {
+        "received": received,
+        **counts,
+        "kept": _groups(kept),
+        "skipped": _groups(skipped, limited),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -3040,6 +3280,7 @@ async def log_interaction(
     follow_up_at: datetime | None = None,
     opportunity_id: str | None = None,
     idempotency_key: str | None = None,
+    limits: Limits | None = None,
 ) -> Interaction:
     """Create an interaction; auto-copy ``organization_id`` from the contact.
 
@@ -3054,8 +3295,9 @@ async def log_interaction(
     over ``(tenant_id, workspace_id, contact_id, idempotency_key)``. A second call
     with the SAME key on the SAME contact returns the EXISTING interaction instead
     of appending a duplicate; the same key on a DIFFERENT contact is a new row.
-    When omitted (the default), every call inserts a new row — the original
-    append behavior, unchanged.
+    When omitted (the default), every call inserts a new row.
+
+    A new row counts toward ``limits.max_interactions``; a replay of a key does not.
     """
     _check_len("kind", kind, _CAP_SHORT)
     _check_len("direction", direction, _CAP_SHORT)
@@ -3070,6 +3312,7 @@ async def log_interaction(
             raise ValueError(
                 f"direction must be {' or '.join(DIRECTIONS)}, or omitted; got {direction!r}"
             )
+    await _hold_limits_lock(conn, ctx, limits)
     contact_row = await _contact_row(conn, contact_id)  # validate in-scope; 404 otherwise
     if opportunity_id is not None:
         # The opportunity this touch advances — validate in-scope (404 otherwise) in
@@ -3101,7 +3344,7 @@ async def log_interaction(
     if idempotency_key is not None:
         # Retry-safe path: a second call with the same key converges to the row
         # the first call inserted — no duplicate — via the partial unique index.
-        upserted, _created = await _upsert_returning(
+        upserted, created = await _upsert_returning(
             conn,
             table=interaction,
             insert_values=insert_values,
@@ -3123,6 +3366,9 @@ async def log_interaction(
     else:
         # No key → plain append (every call inserts a new interaction).
         await conn.execute(interaction.insert().values(**insert_values))
+        created = True
+    if created:
+        await _enforce_limits(conn, ctx, limits, ("max_interactions",))
     # Read back through the live-link projection: a retry can return a row whose
     # organization or opportunity was deleted since, and that link reads as absent.
     fetched = await _one(
@@ -3150,6 +3396,7 @@ async def set_contact_dossier(
     contact_id: str,
     dossier: str,
     append: bool = False,
+    limits: Limits | None = None,
 ) -> tuple[Contact, datetime | None]:
     """Write a contact's dossier; stamp ``dossier_updated_at``. Returns ``(Contact, previous_ts)``.
 
@@ -3159,7 +3406,7 @@ async def set_contact_dossier(
     """
     row = await _contact_row(conn, contact_id)  # 404 if out of scope
     previous = row["dossier_updated_at"]
-    await _write_dossier(conn, contact, contact_id, dossier, append=append)
+    await _write_dossier(conn, contact, contact_id, dossier, append=append, limits=limits)
     fresh = await _contact_row(conn, contact_id)
     await write_audit(
         conn, ctx, entity="contact", action="set_dossier", outcome="ok", entity_id=contact_id
@@ -3174,6 +3421,7 @@ async def set_organization_dossier(
     org_id: str,
     dossier: str,
     append: bool = False,
+    limits: Limits | None = None,
 ) -> tuple[Organization, datetime | None]:
     """Write an org's dossier; stamp ``dossier_updated_at``. Returns ``(Organization, previous_ts)``.
 
@@ -3182,7 +3430,7 @@ async def set_organization_dossier(
     """
     row = await _org_row(conn, org_id)  # 404 if out of scope
     previous = row["dossier_updated_at"]
-    await _write_dossier(conn, organization, org_id, dossier, append=append)
+    await _write_dossier(conn, organization, org_id, dossier, append=append, limits=limits)
     fresh = await _org_row(conn, org_id)
     await write_audit(
         conn, ctx, entity="organization", action="set_dossier", outcome="ok", entity_id=org_id
@@ -3191,7 +3439,13 @@ async def set_organization_dossier(
 
 
 async def _write_dossier(
-    conn: AsyncConnection, table: Any, row_id: str, dossier: str, *, append: bool
+    conn: AsyncConnection,
+    table: Any,
+    row_id: str,
+    dossier: str,
+    *,
+    append: bool,
+    limits: Limits | None = None,
 ) -> None:
     """Replace a row's dossier, or with ``append`` add to it, in one statement.
 
@@ -3203,11 +3457,19 @@ async def _write_dossier(
     refused, since it cannot mean "clear". A row gone since the caller's scoped
     read writes nothing and raises nothing here: the caller's re-read raises its
     not-found error.
+
+    ``limits.max_dossier_bytes`` bounds the dossier as it would be stored, the joined text
+    for an append, the same way: a write past it changes nothing and raises
+    :class:`LimitExceededError`. Clearing is never refused.
     """
     _check_len("dossier", dossier, _CAP_DOSSIER)
+    limit = limits.max_dossier_bytes if limits is not None else None
     now = _now()
     if not append:
         value, stamp = _dossier_value(dossier)
+        size = len(value.encode("utf-8")) if value is not None else 0
+        if limit is not None and size > limit:
+            raise LimitExceededError("max_dossier_bytes", limit, size=size)
         await conn.execute(
             table.update()
             .where(table.c.id == row_id)
@@ -3218,14 +3480,19 @@ async def _write_dossier(
     if text is None:
         raise ValueError("append adds text to the dossier; pass the text to add")
     joined = dialect.joined_text(conn.dialect.name, "\n\n", table.c.dossier, text)
+    size = dialect.byte_length(conn.dialect.name, joined)
+    cap = _CAP_DOSSIER if limit is None else min(limit, _CAP_DOSSIER)
     written = await conn.execute(
         table.update()
-        .where(table.c.id == row_id, dialect.byte_length(conn.dialect.name, joined) <= _CAP_DOSSIER)
+        .where(table.c.id == row_id, size <= cap)
         .values(dossier=joined, dossier_updated_at=now, updated_at=now)
     )
     if written.rowcount == 0:
-        if await _one(conn, select(table.c.id).where(table.c.id == row_id)) is None:
+        found = await _one(conn, select(size.label("size")).where(table.c.id == row_id))
+        if found is None:
             return
+        if limit is not None and found["size"] <= _CAP_DOSSIER:
+            raise LimitExceededError("max_dossier_bytes", limit, size=found["size"])
         raise ValueError(
             f"appending would take the dossier past its maximum length of {_CAP_DOSSIER} "
             "bytes; rewrite it shorter without append"
@@ -3814,7 +4081,8 @@ async def link_similar_companies(
     *,
     org_id: str,
     companies: Sequence[Mapping[str, Any]],
-) -> dict[str, int]:
+    limits: Limits | None = None,
+) -> dict[str, Any]:
     """Persist a lookalike set into the graph as ``similar_to`` edges from a seed org.
 
     The host hands in a similar-companies result from whichever tool found it (**People
@@ -3841,8 +4109,14 @@ async def link_similar_companies(
     ``{linked, created, skipped}``: ``created`` = newly-inserted orgs, ``linked`` =
     edges written, ``skipped`` = rows dropped as unusable (no resolvable domain, or a
     field over the length cap).
+
+    Under ``limits``, a company new to the workspace counts toward the organization limits.
+    One that would pass them is rolled back alone and counted in ``skipped``, and the result
+    names the first limit it met as ``limit``; a company already held still links.
     """
+    await _hold_limits_lock(conn, ctx, limits)
     await _org_row(conn, org_id)  # validate the seed in-scope; 404 otherwise
+    limited: str | None = None
     linked = 0
     created = 0
     skipped = 0
@@ -3882,35 +4156,26 @@ async def link_similar_companies(
         # Provenance flags apply to newly-inserted orgs ONLY: ON CONFLICT DO NOTHING
         # so a domain match to an existing org leaves it entirely untouched (never
         # restamps status/source) — we just reuse its id as the edge target.
-        row, was_created = await _upsert_returning(
-            conn,
-            table=organization,
-            insert_values={
-                "id": _new_org_id(),
-                **ctx.identity_columns(),
-                "name": name,
-                "domain": domain,
-                "industry": industry,
-                "employee_range": employee_range,
-                "revenue_range": revenue_range,
-                "headquarters": headquarters,
-                "source": "similar_companies",
-                "status": "discovered",
-                "created_at": now,
-                "updated_at": now,
-            },
-            conflict_index_elements=[
-                organization.c.tenant_id,
-                organization.c.workspace_id,
-                organization.c.domain_key,
-            ],
-            conflict_where=organization.c.domain.isnot(None),
-            reselect_predicate=and_(
-                organization.c.tenant_id == ctx.tenant_id,
-                organization.c.workspace_id == ctx.workspace_id,
-                organization.c.domain_key == address_key(domain),
-            ),
-        )
+        try:
+            async with conn.begin_nested():
+                row, was_created = await _upsert_similar(
+                    conn,
+                    ctx,
+                    domain=domain,
+                    name=name,
+                    industry=industry,
+                    employee_range=employee_range,
+                    revenue_range=revenue_range,
+                    headquarters=headquarters,
+                    now=now,
+                )
+                if was_created:
+                    await _enforce_limits(conn, ctx, limits, _ORGANIZATION_LIMITS)
+        except LimitExceededError as exc:
+            skipped += 1
+            limited = limited or exc.limit
+            seen.add(domain)  # a repeat of it in this batch would meet the same limit
+            continue
         if was_created:
             created += 1
         # Both endpoints are known in-scope here (the seed was validated at the top;
@@ -3938,7 +4203,54 @@ async def link_similar_companies(
         entity_id=org_id,
         detail={"linked": linked, "created": created, "skipped": skipped},
     )
-    return {"linked": linked, "created": created, "skipped": skipped}
+    result: dict[str, Any] = {"linked": linked, "created": created, "skipped": skipped}
+    if limited is not None:
+        result["limit"] = limited
+    return result
+
+
+async def _upsert_similar(
+    conn: AsyncConnection,
+    ctx: Principal,
+    *,
+    domain: str,
+    name: str,
+    industry: str | None,
+    employee_range: str | None,
+    revenue_range: str | None,
+    headquarters: str | None,
+    now: datetime,
+) -> tuple[RowMapping, bool]:
+    """Find a lookalike by domain, or insert it ``discovered``; ``(row, created)``."""
+    return await _upsert_returning(
+        conn,
+        table=organization,
+        insert_values={
+            "id": _new_org_id(),
+            **ctx.identity_columns(),
+            "name": name,
+            "domain": domain,
+            "industry": industry,
+            "employee_range": employee_range,
+            "revenue_range": revenue_range,
+            "headquarters": headquarters,
+            "source": "similar_companies",
+            "status": "discovered",
+            "created_at": now,
+            "updated_at": now,
+        },
+        conflict_index_elements=[
+            organization.c.tenant_id,
+            organization.c.workspace_id,
+            organization.c.domain_key,
+        ],
+        conflict_where=organization.c.domain.isnot(None),
+        reselect_predicate=and_(
+            organization.c.tenant_id == ctx.tenant_id,
+            organization.c.workspace_id == ctx.workspace_id,
+            organization.c.domain_key == address_key(domain),
+        ),
+    )
 
 
 async def list_similar_companies(
@@ -5053,6 +5365,7 @@ async def define_field(
     defined_by: str | None = None,
     minimum: float | None = None,
     maximum: float | None = None,
+    limits: Limits | None = None,
 ) -> tuple[FieldDef, str, list[str]]:
     """Define a custom field, or return the one already defined under this key.
 
@@ -5063,6 +5376,9 @@ async def define_field(
     and fills an empty description. It never changes the label, never removes an
     option, and refuses a different ``type``, because rows already hold values
     validated against the definition as it stands.
+
+    A new definition counts toward ``limits.max_custom_fields``, across the three entities
+    and retired definitions included (:class:`LimitExceededError`).
     """
     entity = normalize_entity(entity)
     key = normalize_key(entity, key)
@@ -5073,6 +5389,7 @@ async def define_field(
     low, high = clean_bounds(field_type, minimum, maximum)
     _check_len("defined_by", defined_by, _CAP_SHORT)
 
+    await _hold_limits_lock(conn, ctx, limits)
     defs = await _field_defs(conn, entity)
     if key not in defs and _live_count(defs) >= MAX_FIELDS_PER_ENTITY:
         raise ValueError(
@@ -5112,6 +5429,8 @@ async def define_field(
             field_def.c.key == key,
         ),
     )
+    if created:
+        await _enforce_limits(conn, ctx, limits, ("max_custom_fields",))
     options_added: list[str] = []
     if not created and row["retired_at"] is not None:
         # A retired key stays taken, so it cannot come back with another type over
@@ -5736,6 +6055,7 @@ async def define_pipeline_stage(
     position: int | None = None,
     probability: int | None = None,
     outcome: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[PipelineStage, str]:
     """Add a stage under ``key``. Returns ``(stage, action)``.
 
@@ -5744,9 +6064,14 @@ async def define_pipeline_stage(
     is (``matched``): defining never changes a stage, :func:`update_pipeline_stage` does.
     A retired key stays taken: defining it is refused, and restoring it is
     ``update_pipeline_stage(retired=False)``.
+
+    A new stage counts toward ``limits.max_pipeline_stages``, with every stage the account
+    ever held, the default ones seeded included (:class:`LimitExceededError`). The seed
+    itself is never refused.
     """
     clean_key = normalize_stage_key(key)
     _check_position(position)
+    await _hold_limits_lock(conn, ctx, limits)
     stages = await _ensure_pipeline(conn, ctx)
     existing = next((row for row in stages if row["key"] == clean_key), None)
     if existing is not None and existing["retired_at"] is not None:
@@ -5788,6 +6113,7 @@ async def define_pipeline_stage(
         ),
     )
     if created:
+        await _enforce_limits(conn, ctx, limits, ("max_pipeline_stages",))
         # Last among the live stages unless a position is given: retired ones sort after.
         await _place_stage(conn, ctx, row["id"], position)
         row = await _one(conn, select(pipeline_stage).where(pipeline_stage.c.id == row["id"]))
@@ -6072,6 +6398,7 @@ async def find_or_create_opportunity(
     idempotency_key: str | None = None,
     fields: Mapping[str, Any] | None = None,
     fields_by: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[Opportunity, str]:
     """Create an opportunity, or return the existing one for a repeated ``idempotency_key``.
 
@@ -6091,6 +6418,9 @@ async def find_or_create_opportunity(
     account). ``stage`` defaults to the pipeline's first open stage and must be one
     the pipeline holds; entering a closing stage stamps ``closed_at``. ``fields``
     fills custom fields; on a match the row's own values stay.
+
+    A create counts toward ``limits.max_opportunities``; a replayed key does not
+    (:class:`LimitExceededError`).
     """
     _check_len("title", title, _CAP_NAME)
     _check_len("stage", stage, _CAP_SHORT)
@@ -6102,6 +6432,7 @@ async def find_or_create_opportunity(
     if not title:
         raise ValueError("title must not be empty")
 
+    await _hold_limits_lock(conn, ctx, limits)
     frozen_org_id = organization_id
     if organization_id is not None:
         await _org_row(conn, organization_id)  # validate the account in-scope
@@ -6163,6 +6494,8 @@ async def find_or_create_opportunity(
         await conn.execute(opportunity.insert().values(**insert_values))
         action = "created"
         row_id = insert_values["id"]
+    if action == "created":
+        await _enforce_limits(conn, ctx, limits, ("max_opportunities",))
 
     await write_audit(
         conn,
@@ -6291,6 +6624,7 @@ async def set_opportunity_dossier(
     opportunity_id: str,
     dossier: str,
     append: bool = False,
+    limits: Limits | None = None,
 ) -> tuple[Opportunity, datetime | None]:
     """Write an opportunity's dossier; stamp ``dossier_updated_at``. Returns ``(Opportunity, previous_ts)``.
 
@@ -6300,7 +6634,7 @@ async def set_opportunity_dossier(
     """
     row = await _opportunity_row(conn, opportunity_id)  # 404 if out of scope
     previous = row["dossier_updated_at"]
-    await _write_dossier(conn, opportunity, opportunity_id, dossier, append=append)
+    await _write_dossier(conn, opportunity, opportunity_id, dossier, append=append, limits=limits)
     fresh = await _opportunity_row(conn, opportunity_id)
     await write_audit(
         conn,
@@ -6698,14 +7032,20 @@ async def define_signal_type(
     key: str,
     label: str,
     description: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[SignalType, str]:
     """Add a signal type under ``key``. Returns ``(type, action)``.
 
     A key the vocabulary already holds is returned as it is (``matched``): defining
     never changes a type, :func:`update_signal_type` does. A retired key stays taken:
     defining it is refused, and restoring it is ``update_signal_type(retired=False)``.
+
+    A new type counts toward ``limits.max_signal_types``, with every type the account ever
+    held, seeded and retired ones included (:class:`LimitExceededError`). The seed itself is
+    never refused.
     """
     clean_key = normalize_signal_type_key(key)
+    await _hold_limits_lock(conn, ctx, limits)
     types = await _ensure_signal_types(conn, ctx)
     existing = next((row for row in types if row["key"] == clean_key), None)
     if existing is not None and existing["retired_at"] is not None:
@@ -6745,6 +7085,7 @@ async def define_signal_type(
         )
         action = "created" if created else "matched"
         if created:
+            await _enforce_limits(conn, ctx, limits, ("max_signal_types",))
             await write_audit(
                 conn, ctx, entity="signal_type", action="define", outcome="ok", entity_id=row["id"]
             )
@@ -6890,6 +7231,7 @@ async def record_signal(
     event_date: date | None = None,
     found_by: str | None = None,
     evidence_for: Sequence[str] | None = None,
+    limits: Limits | None = None,
 ) -> tuple[Signal, str, bool]:
     """Record one attested signal about an organization.
 
@@ -6945,6 +7287,9 @@ async def record_signal(
     purpose stated for a claim that was discarded would attach to a fact the caller did
     not record, and a withdrawn signal takes no edge change. Adding never removes an
     edge, so a fact found again for another purpose keeps both.
+
+    A create counts toward ``limits.max_signals``; a match does not
+    (:class:`LimitExceededError`).
     """
     parties = parse_parties(evidence_for or [], required=False)
     _check_len("claim", claim, _CAP_CLAIM)
@@ -6976,6 +7321,7 @@ async def record_signal(
             "source reports, or no event_date"
         )
     _check_event_order(event_date, source_date)
+    await _hold_limits_lock(conn, ctx, limits)
     signal_type = await _signal_type_for(conn, ctx, signal_type)
 
     await _org_row(conn, organization_id)  # validate the account in-scope; 404 otherwise
@@ -7026,6 +7372,8 @@ async def record_signal(
     # already recorded the same fact. False means the key collided on a DIFFERENT
     # fact from the same page and type — see the docstring.
     stored = row["claim"] == clean_claim and row["evidence_quote"] == clean_quote
+    if created:
+        await _enforce_limits(conn, ctx, limits, ("max_signals",))
     if not created:
         # Fill the empty ANNOTATION fields only. The claim and quote of the
         # existing row stand: a second read of the same page adds context, never
@@ -7493,6 +7841,7 @@ async def record_proof_point(
     attested_by: str | None = None,
     scope_notes: str | None = None,
     idempotency_key: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[ProofPoint, str]:
     """Record a citable claim about our own work. Returns ``(ProofPoint, action)``.
 
@@ -7510,7 +7859,8 @@ async def record_proof_point(
     label. Neither is required: past work predates the CRM, and absence of a
     record is not absence of the fact. An optional ``idempotency_key`` makes a
     retried create converge to one row (partial unique ``uq_proof_point_idem``);
-    without one every call creates a new proof point.
+    without one every call creates a new proof point. A create counts toward
+    ``limits.max_proof_points``; a replayed key does not (:class:`LimitExceededError`).
     """
     _check_len("claim", claim, _CAP_CLAIM)
     _check_len("engagement", engagement, _CAP_NAME)
@@ -7530,6 +7880,7 @@ async def record_proof_point(
     )
     if state == VERIFIED and clean_attester is None:
         raise ValueError("attested_by is required to record a proof point as verified")
+    await _hold_limits_lock(conn, ctx, limits)
     if organization_id is not None:
         await _org_row(conn, organization_id)  # validate the client in-scope; 404 otherwise
 
@@ -7581,6 +7932,8 @@ async def record_proof_point(
         row = await _proof_point_row(conn, insert_values["id"])
         action = "created"
         row_id = row["id"]
+    if action == "created":
+        await _enforce_limits(conn, ctx, limits, ("max_proof_points",))
 
     await write_audit(
         conn, ctx, entity="proof_point", action="record", outcome="ok", entity_id=row_id

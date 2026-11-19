@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "@nimblebraininc/agentreadycrm",
   "display_name": "Agent Ready CRM",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A CRM for AI agents: organizations, contacts, interactions, deals, signals and proof points, kept in one SQLite file on your own machine. No account, no cloud service.",
   "author": {
     "name": "NimbleBrain Inc",

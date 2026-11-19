@@ -52,6 +52,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, array
 from sqlalchemy.engine import Dialect
+from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.visitors import InternalTraversal
 from sqlalchemy.types import TypeDecorator, TypeEngine
@@ -77,6 +78,7 @@ __all__ = [
     "fields_written",
     "insert_for",
     "joined_text",
+    "serialize_on",
 ]
 
 SQLITE = "sqlite"
@@ -110,6 +112,22 @@ class UTCDateTime(TypeDecorator[datetime]):
         if value is not None and value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value
+
+
+async def serialize_on(conn: AsyncConnection, key: str) -> None:
+    """Hold a lock named ``key`` until the transaction ends, so transactions that take it run
+    their next statements one at a time.
+
+    On Postgres it is a transaction-scoped advisory lock on a 64-bit hash of ``key``. Under
+    READ COMMITTED, Postgres's default, each statement after it sees what an earlier holder
+    committed. SQLite needs nothing: every transaction already holds the database's write lock
+    from ``BEGIN IMMEDIATE``.
+    """
+    if conn.dialect.name == SQLITE:
+        return
+    await conn.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(literal(key), literal(0))))
+    )
 
 
 def insert_for(dialect: str, table: Table) -> Any:
