@@ -55,16 +55,20 @@ the core's.
 |---|---|---|
 | `max_contacts`, `max_organizations` | Records not deleted. An archived record counts, and so do a discovered organization and the duplicate a merge archives | Every create of one: `find_or_create_contact`, `find_or_create_organization`, the imports, a contact's new organization, `link_similar_organizations` |
 | `max_contacts_created`, `max_organizations_created` | Every record ever created, deleted ones included | The same creates. Deleting frees live room but the record stays stored, so this bounds delete-and-recreate |
-| `max_opportunities` | Deals not deleted, won and lost ones included | `create_opportunity` |
+| `max_open_opportunities` | Open deals: not deleted, in a stage whose outcome is neither won nor lost. The outcome is the stage row's, a retired stage's included; a stage the pipeline does not name is open | `create_opportunity` into an open stage, and `move_opportunity` from a won or lost stage into an open one |
+| `max_opportunities_created` | Every deal ever created, closed and deleted ones included | `create_opportunity` |
 | `max_interactions`, `max_signals`, `max_proof_points` | Every record ever created | `log_interaction`, `record_signal`, `record_proof_point` |
 | `max_custom_fields` | Every field definition across the three entities, retired ones included: a retired key stays taken | `define_field` |
 | `max_pipeline_stages`, `max_signal_types` | Every stage or type ever defined, the seeded ones included | `define_pipeline_stage`, `define_signal_type` |
 | `max_dossier_bytes` | One dossier, in UTF-8 bytes as it would be stored | `dossier` and `dossier_append` on the three update tools; for an append, the joined text |
 | `max_import_rows` | The rows of one call | `import_contacts`, `import_organizations` |
 
-**Only a create counts.** A match (by reference, key or idempotency key) is never refused, and
-neither is an edit, a merge, an archive, a move, a withdrawal or a delete: each frees room or
-leaves it as it was. A call whose match would create an organization to wire a contact to is a
+**Only a create counts, and a reopen.** A match (by reference, key or idempotency key) is never
+refused, and neither is an edit, a merge, an archive, a withdrawal or a delete: each frees room
+or leaves it as it was. A move is refused only when it takes a deal from a won or lost stage
+into an open one, which makes it open again; moving a deal to a won or lost stage frees open
+room. The deal's current outcome is read under the account's lock, so a concurrent move cannot
+change it between the read and the count. A call whose match would create an organization to wire a contact to is a
 create of that organization. The workspace's seeded pipeline and signal types are never
 refused, even past a limit below their number; the `define_*` call after them is.
 
@@ -87,8 +91,8 @@ is written, and the core's own cap on a dossier applies as well.
 
 **A refusal** is `invalid_request` with `limit` naming the `Limits` field, so a client can tell
 it from a bad argument without a new code. Its `next_step` names what frees room (deleting
-records no longer worked, shortening the dossier, splitting the import), says when nothing
-does, and names the local install, which has no limits. It is a denied attempt in
+records no longer worked, closing decided deals, shortening the dossier, splitting the import),
+says when nothing does, and names the local install, which has no limits. It is a denied attempt in
 `people_audit`, and the runtime records the field's event (`<field>_refused`). Limits add no
 argument and no tool, so the surface is the same under every runtime.
 
