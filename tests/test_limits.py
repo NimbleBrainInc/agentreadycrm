@@ -1,7 +1,9 @@
 """Limits: what a runtime's :class:`~mcp_people.runtime.Limits` lets an account store.
 
 What these pin, for each limit: a create past it is refused and keeps nothing, one below it
-is not, and a match, an edit, a merge, an archive, a move or a delete is never refused at it.
+is not, and a match, an edit, a merge, an archive or a delete is never refused at it. A move,
+or a stage's outcome changed to open, that reopens a closed deal past the open limit is
+refused; any other move or stage edit is not.
 A live count frees room when a record is deleted or merged; a lifetime count does not, and
 an archived record counts in both. An import longer than ``max_import_rows`` is refused
 whole, and a row inside one that would create past a count is skipped under a reason naming

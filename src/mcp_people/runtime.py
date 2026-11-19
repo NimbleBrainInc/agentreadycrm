@@ -101,8 +101,9 @@ class Limits:
 
     The store enforces each count inside the transaction of the write that would exceed it,
     counting the account's rows the caller's session can see. Where row-level security scopes
-    a session to one workspace, a limit holds per workspace. Only a create counts: a match,
-    an edit, a merge, an archive, a move or a delete is never refused at a count.
+    a session to one workspace, a limit holds per workspace. Only a create, and a reopen of
+    a closed deal, counts: a match, an edit, a merge, an archive, a delete, or a move or stage
+    edit that reopens no closed deal is never refused at a count.
 
     * ``max_contacts`` and ``max_organizations`` count the records not deleted; an archived
       record counts, and so does a discovered organization and the duplicate a merge
