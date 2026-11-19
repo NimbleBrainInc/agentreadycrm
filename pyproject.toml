@@ -111,6 +111,13 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
+[tool.uv]
+# Lock only releases at least 14 days old, the shared Renovate preset's wait, so the weekly
+# lock-file refresh (renovate.json) cannot pull a release from that day. NimbleBrain's own
+# packages are exempt: Renovate holds a bump of one to its own shorter wait.
+exclude-newer = "14 days"
+exclude-newer-package = { nimblebrain-server-sdk = false, pgkeyset = false }
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",

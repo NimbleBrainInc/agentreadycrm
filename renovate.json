@@ -3,8 +3,61 @@
   "extends": [
     "local>NimbleBrainInc/renovate-config"
   ],
-  "description": "GitHub Actions only. The Python and UI dependencies are bumped by hand: uv.lock picks each release, so the golden tests gate every bump, and pgkeyset is pinned exactly.",
+  "description": "Three managers: the Python package (pyproject.toml and uv.lock), the UI (ui/package.json and its lockfile), and the GitHub Actions. uv.lock picks each release CI and the golden tests run, so every bump arrives as a pull request those tests gate. The MCP bundle's pyproject.toml is left out: the release sets its pins.",
   "enabledManagers": [
+    "pep621",
+    "npm",
     "github-actions"
+  ],
+  "lockFileMaintenance": {
+    "description": "On, weekly, for uv.lock: uv holds a refresh to the 14-day wait (exclude-newer in pyproject.toml), exempting only NimbleBrain's own packages. A refresh that moves nimblebrain-server-sdk fails tests/test_mcpb.py until mcpb/pyproject.toml's constraint moves with it in the same pull request. npm cannot hold a refresh to the wait, so ui's lockfile changes only with a dependency bump.",
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "The MCP bundle pins the released package and holds the SDK to the version in uv.lock (tests/test_mcpb.py); the release moves both, never Renovate.",
+      "matchFileNames": [
+        "mcpb/pyproject.toml"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Golden tests hold the wire contracts nimblebrain-server-sdk and pgkeyset produce. pgkeyset is pinned exactly; the SDK is held to a minor range and uv.lock picks its version. A bump of either is a deliberate, reviewed change, never part of a group.",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "nimblebrain-server-sdk",
+        "pgkeyset"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "python dependencies",
+      "matchPackageNames": [
+        "!nimblebrain-server-sdk",
+        "!pgkeyset"
+      ]
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "ui dependencies"
+    }
   ]
 }
