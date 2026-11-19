@@ -15,7 +15,9 @@ from mcp_people import server
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-BUNDLE = tomllib.loads((ROOT / "mcpb" / "pyproject.toml").read_text())["project"]
+BUNDLE_TOML = tomllib.loads((ROOT / "mcpb" / "pyproject.toml").read_text())
+BUNDLE = BUNDLE_TOML["project"]
+LOCK = tomllib.loads((ROOT / "uv.lock").read_text())
 MANIFEST = json.loads((ROOT / "mcpb" / "manifest.json").read_text())
 
 
@@ -24,6 +26,13 @@ def test_the_bundle_names_the_distribution_version_everywhere() -> None:
     assert MANIFEST["version"] == version
     assert BUNDLE["version"] == version
     assert BUNDLE["dependencies"] == [f"{PACKAGE['name']}=={version}"]
+
+
+def test_the_bundle_holds_the_sdk_to_the_locked_version() -> None:
+    """The bundle is locked at tag time, so it takes the SDK release CI and the goldens ran."""
+    (locked,) = [p["version"] for p in LOCK["package"] if p["name"] == "nimblebrain-server-sdk"]
+    constraints = BUNDLE_TOML["tool"]["uv"]["constraint-dependencies"]
+    assert constraints == [f"nimblebrain-server-sdk=={locked}"]
 
 
 def test_the_bundle_is_agent_ready_crm() -> None:
