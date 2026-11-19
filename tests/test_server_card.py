@@ -31,6 +31,15 @@ async def test_the_card_names_the_server_as_serverinfo_does():
     assert 1 <= len(card["description"]) <= 100
 
 
+async def test_the_handshake_reports_the_card_title():
+    from fastmcp import Client
+
+    async with Client(server.mcp) as client:
+        info = client.server_info
+    assert info is not None
+    assert info.title == (await served_card())["title"] == "Agent Ready CRM"
+
+
 async def test_the_placements_name_the_listed_views():
     card = await served_card()
     placements = card["_meta"][HOST_META_KEY]["placements"]

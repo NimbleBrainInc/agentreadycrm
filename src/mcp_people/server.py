@@ -967,7 +967,8 @@ PLACEMENTS: list[Placement] = [
 ]
 
 # Served at <mcp-url>/server-card over streamable HTTP only. Its name, version and website are
-# serverInfo's; the title, description and placements are declared here.
+# serverInfo's; the title, description and placements are declared here, and the title is
+# serverInfo's title too.
 add_server_card(
     mcp,
     title="Agent Ready CRM",

@@ -26,8 +26,10 @@ dependencies = [
     "pydantic>=2.12",
     "sqlalchemy[asyncio]>=2",
     # Annotations, announcements, listing rows, ids, skills and the error contract: the SDK
-    # core only, no extras. Pinned exactly: tests/golden/surface.json gates every bump.
-    "nimblebrain-server-sdk==0.8.0",
+    # core only, no extras. A minor range: a 0.x minor may break, a patch keeps the Python API.
+    # uv.lock picks the release, and only a pull request moves it, so the golden files gate
+    # every bump.
+    "nimblebrain-server-sdk>=0.8.1,<0.9",
     # Keyset paging. Pinned exactly: tests/test_paging_golden.py holds the cursors agents
     # already hold, so an upgrade is a deliberate, reviewed change.
     "pgkeyset==0.2.0",
