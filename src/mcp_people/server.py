@@ -86,6 +86,7 @@ from mcp_people.db.store import (
     ConflictError,
     ContactNotFoundError,
     DeleteRefusedError,
+    LimitExceededError,
     OpportunityNotFoundError,
     OrganizationNotFoundError,
     ProofPointNotFoundError,
@@ -656,6 +657,11 @@ async def _handle_tool_error(
         # how to settle it, so the result carries its words rather than the field's.
         await _audit_attempt(sctx, entity=entity, action=action, outcome="error")
         return _envelope("conflict", exc.message, exc.next_step, field="external_refs")
+    if isinstance(exc, LimitExceededError):
+        # The write would pass one of the runtime's limits: refused, and nothing it did is
+        # kept. A denied attempt, like an out-of-scope id.
+        await _audit_attempt(sctx, entity=entity, action=action, outcome="denied")
+        return _limit_refused(exc)
     if isinstance(exc, ConflictError):
         # A unique-dedupe collision on an explicit update. The op's own transaction
         # rolled back, so record the failed attempt as an error row (so the audit trail
@@ -673,6 +679,24 @@ async def _handle_tool_error(
     if isinstance(exc, InvalidCursor):
         return _invalid(str(exc), _FIX_CURSOR)
     return _invalid(str(exc))
+
+
+def _limit_refused(exc: LimitExceededError) -> dict[str, Any]:
+    """The ``invalid_request`` failure for a write that would pass the runtime's limits.
+
+    ``limit`` names the :class:`~mcp_people.runtime.Limits` field that refused it, so a
+    client can tell this refusal from a bad argument without a new error code, and the
+    refusal is recorded as that field's event.
+    """
+    runtime().record(PeopleEvent(f"{exc.limit}_refused"))
+    return _envelope("invalid_request", exc.message, exc.next_step, limit=exc.limit)
+
+
+def _record_limited(skipped: list[dict[str, Any]]) -> None:
+    """Record a limit's refusal event once per row an import skipped under it."""
+    for group in skipped:
+        if "limit" in group:
+            runtime().record(PeopleEvent(f"{group['limit']}_refused"), len(group["rows"]))
 
 
 def _dossier_write(dossier: str | None, dossier_append: str | None) -> tuple[str, bool] | None:
@@ -1013,6 +1037,7 @@ async def find_or_create_organization(
                 fields=fields,
                 fields_by=fields_by,
                 external_refs=external_refs,
+                limits=runtime().limits(sctx),
             )
     except (ConflictError, ValueError, TypeError) as exc:
         return await _handle_tool_error(
@@ -1107,6 +1132,7 @@ async def find_or_create_contact(
                 fields=fields,
                 fields_by=fields_by,
                 external_refs=external_refs,
+                limits=runtime().limits(sctx),
             )
     except (OrganizationNotFoundError, ConflictError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="contact", action="find_or_create", exc=exc)
@@ -1154,10 +1180,16 @@ async def _run_import(sctx: Any, run: Any) -> dict[str, Any]:
 
 def _import_next_step(result: dict[str, Any], noun: str, read: str) -> str:
     steps = []
-    if result["skipped"]:
+    limited = [g for g in result["skipped"] if "limit" in g]
+    if len(limited) < len(result["skipped"]):
         steps.append(
             "Fix the rows listed under skipped (indices into this call's rows) and import "
             "them again; the rest are saved."
+        )
+    if limited:
+        steps.append(
+            "The rows under skipped with a limit would pass this account's limits, and the "
+            "rest are saved. " + store.limit_next_step(limited[0]["limit"])
         )
     if result["kept"]:
         steps.append(
@@ -1201,7 +1233,12 @@ async def import_organizations(
         result = await _run_import(
             sctx,
             lambda conn: store.import_organizations(
-                conn, sctx, rows=rows, source=source, fields_by=fields_by
+                conn,
+                sctx,
+                rows=rows,
+                source=source,
+                fields_by=fields_by,
+                limits=runtime().limits(sctx),
             ),
         )
     except ValueError as exc:
@@ -1210,6 +1247,7 @@ async def import_organizations(
         return _internal_error(exc, where="import_organizations")
     runtime().record(PeopleEvent.ORGANIZATION_CREATED, result["created"])
     runtime().record(PeopleEvent.ORGANIZATION_PROMOTED, result["promoted"])
+    _record_limited(result["skipped"])
     if result["created"] or result["matched"]:
         await announce_resource_list_changed(ctx)
     return {**result, "next_step": _import_next_step(result, "organizations", "list_organizations")}
@@ -1247,7 +1285,12 @@ async def import_contacts(
         result = await _run_import(
             sctx,
             lambda conn: store.import_contacts(
-                conn, sctx, rows=rows, source=source, fields_by=fields_by
+                conn,
+                sctx,
+                rows=rows,
+                source=source,
+                fields_by=fields_by,
+                limits=runtime().limits(sctx),
             ),
         )
     except ValueError as exc:
@@ -1256,6 +1299,7 @@ async def import_contacts(
         return _internal_error(exc, where="import_contacts")
     runtime().record(PeopleEvent.CONTACT_CREATED, result["created"])
     runtime().record(PeopleEvent.ORGANIZATION_PROMOTED, result["promoted"])
+    _record_limited(result["skipped"])
     if result["created"] or result["matched"]:
         await announce_resource_list_changed(ctx)
     return {**result, "next_step": _import_next_step(result, "contacts", "list_contacts")}
@@ -1347,7 +1391,12 @@ async def update_contact(
             )
             if written is not None:
                 contact, _previous = await store.set_contact_dossier(
-                    conn, sctx, contact_id=contact_id, dossier=written[0], append=written[1]
+                    conn,
+                    sctx,
+                    contact_id=contact_id,
+                    dossier=written[0],
+                    append=written[1],
+                    limits=runtime().limits(sctx),
                 )
     except (
         ContactNotFoundError,
@@ -1732,7 +1781,12 @@ async def update_organization(
             )
             if written is not None:
                 org, _previous = await store.set_organization_dossier(
-                    conn, sctx, org_id=organization_id, dossier=written[0], append=written[1]
+                    conn,
+                    sctx,
+                    org_id=organization_id,
+                    dossier=written[0],
+                    append=written[1],
+                    limits=runtime().limits(sctx),
                 )
     except (OrganizationNotFoundError, ConflictError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="organization", action="update", exc=exc)
@@ -1802,6 +1856,7 @@ async def log_interaction(
                 follow_up_at=follow_up_at,
                 opportunity_id=opportunity_id,
                 idempotency_key=idempotency_key,
+                limits=runtime().limits(sctx),
             )
     except (ContactNotFoundError, OpportunityNotFoundError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="interaction", action="log", exc=exc)
@@ -1910,6 +1965,7 @@ async def define_pipeline_stage(
                 position=position,
                 probability=probability,
                 outcome=outcome,
+                limits=runtime().limits(sctx),
             )
     except (ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="pipeline_stage", action="define", exc=exc)
@@ -2055,6 +2111,7 @@ async def define_field(
                 defined_by=defined_by,
                 minimum=minimum,
                 maximum=maximum,
+                limits=runtime().limits(sctx),
             )
     except (ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="field_def", action="define", exc=exc)
@@ -2721,22 +2778,30 @@ async def link_similar_organizations(
     try:
         async with runtime().session(sctx) as conn:
             counts = await store.link_similar_companies(
-                conn, sctx, org_id=organization_id, companies=companies
+                conn,
+                sctx,
+                org_id=organization_id,
+                companies=companies,
+                limits=runtime().limits(sctx),
             )
     except (OrganizationNotFoundError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="organization", action="link_similar", exc=exc)
     except Exception as exc:  # noqa: BLE001 - final safety net; never a raw 500
         return _internal_error(exc, where="link_similar_organizations")
     runtime().record(PeopleEvent.SIMILAR_COMPANIES_LINKED, counts["linked"])
+    next_step = (
+        f"Review the discovered lookalikes with "
+        f"list_similar_organizations(organization_id={organization_id!r}), then "
+        "promote_organization(organization_id=...) for any you want in the CRM."
+    )
+    if "limit" in counts:
+        runtime().record(PeopleEvent(f"{counts['limit']}_refused"))
+        next_step += (
+            f" Companies new to this workspace that would pass its {counts['limit']} limit "
+            f"were not saved and are counted in skipped. {store.limit_next_step(counts['limit'])}"
+        )
     await announce_resource_list_changed(ctx)
-    return {
-        **counts,
-        "next_step": (
-            f"Review the discovered lookalikes with "
-            f"list_similar_organizations(organization_id={organization_id!r}), then "
-            "promote_organization(organization_id=...) for any you want in the CRM."
-        ),
-    }
+    return {**counts, "next_step": next_step}
 
 
 @mcp.tool(annotations=MOVE, meta=CHATGPT_TOOL_META)
@@ -2901,6 +2966,7 @@ async def create_opportunity(
                 idempotency_key=idempotency_key,
                 fields=fields,
                 fields_by=fields_by,
+                limits=runtime().limits(sctx),
             )
     except (
         OpportunityNotFoundError,
@@ -2995,6 +3061,7 @@ async def update_opportunity(
                     opportunity_id=opportunity_id,
                     dossier=written[0],
                     append=written[1],
+                    limits=runtime().limits(sctx),
                 )
     except (OpportunityNotFoundError, ContactNotFoundError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="opportunity", action="update", exc=exc)
@@ -3241,7 +3308,12 @@ async def define_signal_type(
     try:
         async with runtime().session(sctx) as conn:
             defined, action = await store.define_signal_type(
-                conn, sctx, key=key, label=label, description=description
+                conn,
+                sctx,
+                key=key,
+                label=label,
+                description=description,
+                limits=runtime().limits(sctx),
             )
     except (ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="signal_type", action="define", exc=exc)
@@ -3388,6 +3460,7 @@ async def record_signal(
                 event_date=event_date,
                 found_by=found_by,
                 evidence_for=evidence_for,
+                limits=runtime().limits(sctx),
             )
     except (OrganizationNotFoundError, ContactNotFoundError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="signal", action="record", exc=exc)
@@ -3759,6 +3832,7 @@ async def record_proof_point(
                 attested_by=attested_by,
                 scope_notes=scope_notes,
                 idempotency_key=idempotency_key,
+                limits=runtime().limits(sctx),
             )
     except (
         OrganizationNotFoundError,

@@ -1,6 +1,6 @@
 [project]
 name = "agentreadycrm"
-version = "0.1.1"
+version = "0.2.0"
 description = "A CRM for AI agents, as an MCP server with views: organizations, contacts, deals and the evidence behind them. Runs locally on one SQLite file."
 readme = "README.md"
 license = "MIT"

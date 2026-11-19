@@ -97,8 +97,46 @@ class Scope:
 
 @dataclass(frozen=True)
 class Limits:
-    """How much a scope may hold. The store enforces none yet, so it has no field yet; each
-    limit arrives as a field with the store's enforcement of it."""
+    """How much a scope's account may hold. ``None`` in a field means no limit on it.
+
+    The store enforces each count inside the transaction of the write that would exceed it,
+    counting the account's rows the caller's session can see. Where row-level security scopes
+    a session to one workspace, a limit holds per workspace. Only a create counts: a match,
+    an edit, a merge, an archive, a move or a delete is never refused at a count.
+
+    * ``max_contacts`` and ``max_organizations`` count the records not deleted; an archived
+      record counts, and so does a discovered organization and the duplicate a merge
+      archives. Deleting frees room.
+    * ``max_contacts_created`` and ``max_organizations_created`` count every record ever
+      created, deleted and merged ones included, so delete-and-recreate cannot store more
+      than they allow.
+    * ``max_opportunities`` counts the deals not deleted, won and lost ones included.
+    * ``max_interactions``, ``max_signals`` and ``max_proof_points`` count every record ever
+      created: a lifetime allowance.
+    * ``max_custom_fields`` counts every field definition across the three entities, retired
+      ones included, since a retired key stays taken.
+    * ``max_pipeline_stages`` and ``max_signal_types`` count every stage and type ever
+      defined, retired ones and the default pipeline's seeded stages included. Seeding is
+      never refused; a define past the count is.
+    * ``max_dossier_bytes`` bounds one dossier in UTF-8 bytes, as stored after a write that
+      sets or appends to it. The core's own cap on a dossier applies as well.
+    * ``max_import_rows`` bounds the rows of one import call; a longer import is refused
+      whole. The core's own cap on an import applies as well.
+    """
+
+    max_contacts: int | None = None
+    max_contacts_created: int | None = None
+    max_organizations: int | None = None
+    max_organizations_created: int | None = None
+    max_opportunities: int | None = None
+    max_interactions: int | None = None
+    max_signals: int | None = None
+    max_proof_points: int | None = None
+    max_custom_fields: int | None = None
+    max_pipeline_stages: int | None = None
+    max_signal_types: int | None = None
+    max_dossier_bytes: int | None = None
+    max_import_rows: int | None = None
 
 
 class AuthError(ServiceError):
@@ -158,6 +196,21 @@ class PeopleEvent(StrEnum):
     OPPORTUNITY_DENIED = "opportunity_denied"
     SIGNAL_DENIED = "signal_denied"
     PROOF_POINT_DENIED = "proof_point_denied"
+    #: A write, or an import row, was refused because it would pass the :class:`Limits`
+    #: field the event is named for (``<field>_refused``).
+    MAX_CONTACTS_REFUSED = "max_contacts_refused"
+    MAX_CONTACTS_CREATED_REFUSED = "max_contacts_created_refused"
+    MAX_ORGANIZATIONS_REFUSED = "max_organizations_refused"
+    MAX_ORGANIZATIONS_CREATED_REFUSED = "max_organizations_created_refused"
+    MAX_OPPORTUNITIES_REFUSED = "max_opportunities_refused"
+    MAX_INTERACTIONS_REFUSED = "max_interactions_refused"
+    MAX_SIGNALS_REFUSED = "max_signals_refused"
+    MAX_PROOF_POINTS_REFUSED = "max_proof_points_refused"
+    MAX_CUSTOM_FIELDS_REFUSED = "max_custom_fields_refused"
+    MAX_PIPELINE_STAGES_REFUSED = "max_pipeline_stages_refused"
+    MAX_SIGNAL_TYPES_REFUSED = "max_signal_types_refused"
+    MAX_DOSSIER_BYTES_REFUSED = "max_dossier_bytes_refused"
+    MAX_IMPORT_ROWS_REFUSED = "max_import_rows_refused"
 
 
 class Runtime(Protocol):

@@ -20,7 +20,7 @@ A runtime implements the `Runtime` protocol in `mcp_people/runtime.py`:
 | `identity()` | Who is calling. Returns a `Scope` (`tenant_id`, the active `workspace_id`, the `allowed_workspaces` it may read, optional `user_id` and `correlation_id`), or raises `AuthError` when no verified identity exists |
 | `auth()` | The FastMCP auth provider that gates the HTTP transport, or `None` |
 | `session(scope)` | One database transaction for that scope. May raise `Overloaded` on entry, when it has no capacity for the call |
-| `limits(scope)` | What the scope may hold, or `None` for no limits |
+| `limits(scope)` | What the scope may hold (a `Limits`, below), or `None` for no limits |
 | `record(event, count)` | What to do with a domain event (a record created, a stage changed, a denied lookup): count it, log it, or ignore it |
 | `attach(mcp)` | What the server serves beyond the core's tools and resources |
 | `lifespan()` | Startup and shutdown work, such as bringing the schema to head |
@@ -43,6 +43,54 @@ runs on Postgres with row-level security forced on every table, and the store's 
 on it. The tables carry `tenant_id` and `workspace_id` on every row for that reason, and their
 Postgres forms (JSONB, GIN indexes on custom fields, native `ON CONFLICT` and `now()`) are kept
 beside the SQLite ones in `mcp_people/db/dialect.py`.
+
+### Limits
+
+A runtime that serves many accounts can bound what one stores. `limits(scope)` returns a
+`Limits`, and the store enforces each field that is not `None`; the local runtime returns
+`None`, so a local install has no limits. The values are the deployment's configuration, not
+the core's.
+
+| Field | Counts | Bound by |
+|---|---|---|
+| `max_contacts`, `max_organizations` | Records not deleted. An archived record counts, and so do a discovered organization and the duplicate a merge archives | Every create of one: `find_or_create_contact`, `find_or_create_organization`, the imports, a contact's new organization, `link_similar_organizations` |
+| `max_contacts_created`, `max_organizations_created` | Every record ever created, deleted ones included | The same creates. Deleting frees live room but the record stays stored, so this bounds delete-and-recreate |
+| `max_opportunities` | Deals not deleted, won and lost ones included | `create_opportunity` |
+| `max_interactions`, `max_signals`, `max_proof_points` | Every record ever created | `log_interaction`, `record_signal`, `record_proof_point` |
+| `max_custom_fields` | Every field definition across the three entities, retired ones included: a retired key stays taken | `define_field` |
+| `max_pipeline_stages`, `max_signal_types` | Every stage or type ever defined, the seeded ones included | `define_pipeline_stage`, `define_signal_type` |
+| `max_dossier_bytes` | One dossier, in UTF-8 bytes as it would be stored | `dossier` and `dossier_append` on the three update tools; for an append, the joined text |
+| `max_import_rows` | The rows of one call | `import_contacts`, `import_organizations` |
+
+**Only a create counts.** A match (by reference, key or idempotency key) is never refused, and
+neither is an edit, a merge, an archive, a move, a withdrawal or a delete: each frees room or
+leaves it as it was. A call whose match would create an organization to wire a contact to is a
+create of that organization. The workspace's seeded pipeline and signal types are never
+refused, even past a limit below their number; the `define_*` call after them is.
+
+**A count runs in the write's own transaction, after the create**, and a write over it raises,
+so the transaction rolls back and nothing the call did is kept. Before anything it writes, a
+limited write takes a transaction-scoped lock on its account (`serialize_on` in
+`mcp_people/db/dialect.py`: an advisory lock on Postgres; SQLite's `BEGIN IMMEDIATE` already
+serializes writers), so two concurrent creates cannot both take the last slot. The count runs
+under the caller's session, so row-level security still applies: where it scopes a session to
+one workspace, a limit holds per workspace. When a create passes a lifetime and a live count,
+the refusal names the lifetime one, since freeing live room would not help.
+
+**Batches.** An import longer than `max_import_rows` is refused whole, before any row runs,
+as the core's own cap refuses a longer one. Inside an import, a row that would create past a
+count is rolled back alone and reported under `skipped`, its group carrying `limit`, and the
+other rows commit: the import's per-row contract. `link_similar_organizations` skips a new
+company the same way, counts it in `skipped` and names the limit as `limit`; a company the
+workspace already holds still links. A dossier past `max_dossier_bytes` is refused before it
+is written, and the core's own cap on a dossier applies as well.
+
+**A refusal** is `invalid_request` with `limit` naming the `Limits` field, so a client can tell
+it from a bad argument without a new code. Its `next_step` names what frees room (deleting
+records no longer worked, shortening the dossier, splitting the import), says when nothing
+does, and names the local install, which has no limits. It is a denied attempt in
+`people_audit`, and the runtime records the field's event (`<field>_refused`). Limits add no
+argument and no tool, so the surface is the same under every runtime.
 
 ## Data model
 
@@ -220,7 +268,7 @@ A failure is a tool result flagged `isError`, with one body:
 | Code | When |
 |---|---|
 | `not_found` | The id names nothing the caller can see. An absent record and one outside the caller's scope are indistinguishable. The envelope carries `entity` and `id` |
-| `invalid_request` | An argument is wrong; nothing was changed. The message names the argument |
+| `invalid_request` | An argument is wrong, or the write would pass one of the runtime's limits; nothing was changed. The message names the argument, or the envelope carries `limit` |
 | `conflict` | A key another record holds, a delete something still depends on, or a change to a withdrawn signal. The envelope carries `field` |
 | `unauthenticated` | The runtime established no identity. Returned before any database session opens |
 | `rate_limited` | The runtime had no capacity for the call and ran nothing; a retry is safe |

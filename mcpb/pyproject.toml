@@ -5,10 +5,10 @@
 # version (tests/test_mcpb.py).
 [project]
 name = "agentreadycrm-mcpb"
-version = "0.1.1"
+version = "0.2.0"
 description = "The Agent Ready CRM MCP bundle: runs the agentreadycrm package with uv."
 requires-python = ">=3.13,<3.15"
-dependencies = ["agentreadycrm==0.1.1"]
+dependencies = ["agentreadycrm==0.2.0"]
 
 [tool.uv]
 package = false
