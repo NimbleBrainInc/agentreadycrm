@@ -3018,9 +3018,10 @@ def _check_import_size(rows: Sequence[Any]) -> None:
 def _groups(
     by_reason: Mapping[str, list[int]], limited: Mapping[str, str] | None = None
 ) -> list[dict[str, Any]]:
-    """``[{reason, rows}]``, the first :data:`_MAX_REASON_GROUPS` reasons by name and the
-    rest folded into one. A reason in ``limited`` is a limit's, and its group carries the
-    :class:`~mcp_people.runtime.Limits` field as ``limit``."""
+    """``[{reason, rows}]``, at most :data:`_MAX_REASON_GROUPS` of them, the rest folded
+    into one. A reason in ``limited`` is a limit's: its group carries the
+    :class:`~mcp_people.runtime.Limits` field as ``limit`` and is never folded, so the
+    caller can tell those rows from rows to fix. There is one such reason per field."""
     limited = limited or {}
     groups: list[dict[str, Any]] = [
         {"reason": r, "rows": rows, **({"limit": limited[r]} if r in limited else {})}
@@ -3028,9 +3029,12 @@ def _groups(
     ]
     if len(groups) <= _MAX_REASON_GROUPS:
         return groups
-    head, tail = groups[: _MAX_REASON_GROUPS - 1], groups[_MAX_REASON_GROUPS - 1 :]
+    limits = [g for g in groups if "limit" in g]
+    others = [g for g in groups if "limit" not in g]
+    keep = _MAX_REASON_GROUPS - len(limits) - 1
+    head, tail = others[:keep], others[keep:]
     rest = sorted(i for g in tail for i in g["rows"])
-    return [*head, {"reason": f"{len(tail)} other reasons", "rows": rest}]
+    return [*head, *limits, {"reason": f"{len(tail)} other reasons", "rows": rest}]
 
 
 async def _kept_keys(

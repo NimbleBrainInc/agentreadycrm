@@ -625,6 +625,26 @@ async def test_an_import_tool_names_the_limit_in_its_next_step_and_records_each_
     assert (PeopleEvent.MAX_CONTACTS_REFUSED, 2) in events
 
 
+async def test_an_import_with_many_skip_reasons_keeps_its_limit_rows_apart(limited) -> None:
+    """Past the most reason groups a result names, the rows a limit skipped keep their own
+    group, its ``limit``, its next step and their events; only the other reasons fold."""
+    events = limited(Limits(max_contacts=0))
+    bad = [{"email": f"p{i}@acme.example", "fields": {f"f{i:02}": "x"}} for i in range(25)]
+    async with Client(server) as client:
+        failed, body = await _call(
+            client, "import_contacts", rows=[*bad, {"email": "ok@acme.example"}]
+        )
+    assert not failed
+    assert len(body["skipped"]) == 20
+    [held] = [g for g in body["skipped"] if "limit" in g]
+    assert held["limit"] == "max_contacts"
+    assert held["rows"] == [25]
+    assert "would pass this account's limits" in body["next_step"]
+    assert "Fix the rows listed under skipped" in body["next_step"]
+    assert sorted(i for g in body["skipped"] for i in g["rows"]) == list(range(26))
+    assert (PeopleEvent.MAX_CONTACTS_REFUSED, 1) in events
+
+
 async def test_an_import_over_the_row_limit_is_refused_by_the_tool(limited) -> None:
     limited(Limits(max_import_rows=1))
     async with Client(server) as client:
