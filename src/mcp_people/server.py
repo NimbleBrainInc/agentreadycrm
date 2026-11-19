@@ -3105,7 +3105,12 @@ async def move_opportunity(
     try:
         async with runtime().session(sctx) as conn:
             opp = await store.set_opportunity_stage(
-                conn, sctx, opportunity_id=opportunity_id, stage=stage, probability=probability
+                conn,
+                sctx,
+                opportunity_id=opportunity_id,
+                stage=stage,
+                probability=probability,
+                limits=runtime().limits(sctx),
             )
     except (OpportunityNotFoundError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="opportunity", action="move", exc=exc)
