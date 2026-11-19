@@ -3,6 +3,10 @@
 # locks it (uv.lock) once that version is on PyPI, and packs the lock into the bundle, so
 # `uv run --frozen` installs exactly what was tested. The pin must equal the package's name and
 # version (tests/test_mcpb.py).
+#
+# The package declares nimblebrain-server-sdk as a minor range, and that lock is made at tag time,
+# so the constraint below holds the bundle to the SDK version in the root uv.lock, the one CI and
+# the golden tests ran. It must equal that version (tests/test_mcpb.py).
 [project]
 name = "agentreadycrm-mcpb"
 version = "0.2.0"
@@ -12,3 +16,4 @@ dependencies = ["agentreadycrm==0.2.0"]
 
 [tool.uv]
 package = false
+constraint-dependencies = ["nimblebrain-server-sdk==0.8.1"]

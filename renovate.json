@@ -3,7 +3,7 @@
   "extends": [
     "local>NimbleBrainInc/renovate-config"
   ],
-  "description": "GitHub Actions only. The Python and UI dependencies are bumped by hand: the golden tests gate every bump, and the exact pins in pyproject.toml are deliberate.",
+  "description": "GitHub Actions only. The Python and UI dependencies are bumped by hand: uv.lock picks each release, so the golden tests gate every bump, and pgkeyset is pinned exactly.",
   "enabledManagers": [
     "github-actions"
   ]

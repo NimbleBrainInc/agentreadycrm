@@ -65,10 +65,13 @@ comment before posting: `python scripts/check_public.py --text <file>`.
 | `paging.txt` | The cursors agents already hold, and the SQL each resumes with |
 
 A deliberate change edits the golden file by hand in the same pull request, so review sees the
-diff. A dependency bump that changes one is a reviewed change too: `uv.lock` is what CI and
-the golden tests run, and only a pull request moves it, so the lock is the gate for every bump.
-`nimblebrain-server-sdk` is held to a minor range (a 0.x minor may break; a patch keeps the
-Python API). `pgkeyset` is pinned exactly, because `paging.txt` freezes its cursor format. A
+diff. A dependency bump that changes one is a reviewed change too. `uv.lock` is what CI and
+the golden tests run, and only a pull request moves it; the released MCP bundle is held to the
+same SDK version by the constraint in `mcpb/pyproject.toml` (`tests/test_mcpb.py`). The lock
+does not gate an install of the published package: `uvx agentreadycrm` or pip takes the newest
+release in the package's range. `nimblebrain-server-sdk` is held to a minor range (a 0.x minor
+may break), so such an install takes the newest 0.8.x on the SDK's patch policy, untested here.
+`pgkeyset` is pinned exactly, because `paging.txt` freezes its cursor format. A
 change to a tool's name, schema, annotations or `_meta` also moves `CONTRACT_SHA256` in
 `tests/test_public_surface.py`.
 
