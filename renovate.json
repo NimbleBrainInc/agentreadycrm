@@ -3,19 +3,12 @@
   "extends": [
     "local>NimbleBrainInc/renovate-config"
   ],
-  "description": "Three managers: the Python package (pyproject.toml and uv.lock), the UI (ui/package.json and its lockfile), and the GitHub Actions. uv.lock picks each release CI and the golden tests run, so every bump arrives as a pull request those tests gate. The MCP bundle's pyproject.toml is left out: the release sets its pins.",
+  "description": "Three managers: the Python package (pyproject.toml and uv.lock), the UI (ui/package.json and its lockfile), and the GitHub Actions. uv.lock picks each release CI and the golden tests run, so every bump arrives as a pull request those tests gate. The MCP bundle's pyproject.toml is left out: the release sets its pins. Lock-file refreshes stay off (the shared default): npm cannot hold a refresh to the 14-day wait, and uv can only with exclude-newer = \"14 days\" in pyproject.toml, which cannot resolve yet: the SDK's >=0.8.1 floor has no release that old until 0.8.1 (uploaded 2026-11-19) ages in after 2026-12-03, and pgkeyset 0.2.0 (2026-11-13) after 2026-11-27. A refresh would move the SDK within its range without dashboard approval, and tests/test_mcpb.py fails it until mcpb/pyproject.toml's constraint moves with it.",
   "enabledManagers": [
     "pep621",
     "npm",
     "github-actions"
   ],
-  "lockFileMaintenance": {
-    "description": "On, weekly, for uv.lock: uv holds a refresh to the 14-day wait (exclude-newer in pyproject.toml), exempting only NimbleBrain's own packages. A refresh that moves nimblebrain-server-sdk fails tests/test_mcpb.py until mcpb/pyproject.toml's constraint moves with it in the same pull request. npm cannot hold a refresh to the wait, so ui's lockfile changes only with a dependency bump.",
-    "enabled": true,
-    "schedule": [
-      "before 6am on monday"
-    ]
-  },
   "packageRules": [
     {
       "description": "The MCP bundle pins the released package and holds the SDK to the version in uv.lock (tests/test_mcpb.py); the release moves both, never Renovate.",

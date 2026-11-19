@@ -66,11 +66,11 @@ comment before posting: `python scripts/check_public.py --text <file>`.
 
 A deliberate change edits the golden file by hand in the same pull request, so review sees the
 diff. A dependency bump that changes one is a reviewed change too. `uv.lock` is what CI and
-the golden tests run, and only a pull request moves it: a bump, or Renovate's weekly lock
-refresh (`renovate.json`), which locks only releases at least 14 days old (`exclude-newer` in
-`pyproject.toml`) except NimbleBrain's own packages. The released MCP bundle is held to the
-same SDK version by the constraint in `mcpb/pyproject.toml` (`tests/test_mcpb.py`), so a pull
-request that moves the SDK in the lock moves that constraint with it. The lock
+the golden tests run, and only a pull request moves it: a bump, by hand or from Renovate
+(`renovate.json`, which says why it does not refresh the whole lock yet). The released MCP
+bundle is held to the same SDK version by the constraint in `mcpb/pyproject.toml`
+(`tests/test_mcpb.py`), so a pull request that moves the SDK in the lock moves that constraint
+with it. The lock
 does not gate an install of the published package: `uvx agentreadycrm` or pip takes the newest
 release in the package's range. `nimblebrain-server-sdk` is held to a minor range (a 0.x minor
 may break), so such an install takes the newest 0.8.x on the SDK's patch policy, untested here.
