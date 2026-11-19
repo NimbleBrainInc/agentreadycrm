@@ -368,12 +368,12 @@ _LIMIT_WORDS: dict[str, tuple[str, str | None]] = {
         "merge archives.",
     ),
     "max_organizations_created": ("organization", None),
-    "max_opportunities": (
-        "deal",
-        "Deleting an organization with delete_organization deletes its deals and frees room; "
-        "a won or lost deal still counts. Keep updating the deals there are with "
-        "update_opportunity and move_opportunity.",
+    "max_open_opportunities": (
+        "open deal",
+        "Close the deals that are decided by moving them to a won or lost stage with "
+        "move_opportunity to free room, then retry; a closed deal does not count.",
     ),
+    "max_opportunities_created": ("deal", None),
     "max_interactions": ("interaction", None),
     "max_signals": ("signal", None),
     "max_proof_points": ("proof point", None),
@@ -386,6 +386,10 @@ _LIMIT_WORDS: dict[str, tuple[str, str | None]] = {
 _LIFETIME_KEEPS = {
     "max_contacts_created": "Every contact it holds stays readable and editable.",
     "max_organizations_created": "Every organization it holds stays readable and editable.",
+    "max_opportunities_created": (
+        "Every deal it holds stays readable, editable with update_opportunity and movable "
+        "with move_opportunity."
+    ),
     "max_interactions": "Every interaction it holds stays readable with list_interactions.",
     "max_signals": "Every signal it holds stays readable with list_signals.",
     "max_proof_points": "Every proof point it holds stays readable with list_proof_points.",
@@ -415,7 +419,14 @@ class LimitExceededError(ValueError):
     skips a row for it as it skips a row for a bad value.
     """
 
-    def __init__(self, limit: str, maximum: int, *, size: int | None = None) -> None:
+    def __init__(
+        self,
+        limit: str,
+        maximum: int,
+        *,
+        size: int | None = None,
+        next_step: str | None = None,
+    ) -> None:
         self.limit = limit
         self.maximum = maximum
         if limit == "max_dossier_bytes":
@@ -436,7 +447,7 @@ class LimitExceededError(ValueError):
         else:
             noun = _LIMIT_WORDS[limit][0]
             self.reason = f"this account is at its limit of {_count_of(maximum, noun)}"
-        self.next_step = limit_next_step(limit)
+        self.next_step = next_step or limit_next_step(limit)
         self.message = f"{self.reason[0].upper()}{self.reason[1:]} ({limit}). Nothing was changed."
         super().__init__(self.message)
 
@@ -454,7 +465,8 @@ def limit_next_step(limit: str) -> str:
     frees = _LIMIT_WORDS[limit][1]
     if frees is None:
         return (
-            "Deleting, merging or retiring does not free this allowance. "
+            "Nothing frees this allowance: deleting, merging, closing or retiring a record "
+            "leaves it counted. "
             f"{_LIFETIME_KEEPS[limit]} {_NO_LIMITS}"
         )
     return f"{frees} {_NO_LIMITS}"
@@ -475,19 +487,34 @@ async def _hold_limits_lock(conn: AsyncConnection, ctx: Principal, limits: Limit
         await dialect.serialize_on(conn, _LIMITS_LOCK + ctx.tenant_id)
 
 
-#: The table each counted limit counts, and whether it counts only rows not deleted.
-_COUNTED: dict[str, tuple[Any, bool]] = {
-    "max_contacts": (contact, True),
-    "max_contacts_created": (contact, False),
-    "max_organizations": (organization, True),
-    "max_organizations_created": (organization, False),
-    "max_opportunities": (opportunity, True),
-    "max_interactions": (interaction, False),
-    "max_signals": (signal, False),
-    "max_proof_points": (proof_point, False),
-    "max_custom_fields": (field_def, False),
-    "max_pipeline_stages": (pipeline_stage, False),
-    "max_signal_types": (signal_type_table, False),
+def _open_deal() -> ColumnElement[bool]:
+    """A deal that counts as open: not deleted, and its stage's outcome is neither won nor
+    lost. The outcome is the stage row's, retired or not; a stage the pipeline does not name
+    leaves the deal open."""
+    closing = select(pipeline_stage.c.id).where(
+        pipeline_stage.c.tenant_id == opportunity.c.tenant_id,
+        pipeline_stage.c.workspace_id == opportunity.c.workspace_id,
+        pipeline_stage.c.key == opportunity.c.stage,
+        pipeline_stage.c.outcome != OPEN,
+    )
+    return and_(_live(opportunity), ~exists(closing))
+
+
+#: The table each counted limit counts, and which of its rows: ``live`` (not deleted),
+#: ``all`` (ever created) or ``open`` (an open deal, :func:`_open_deal`).
+_COUNTED: dict[str, tuple[Any, str]] = {
+    "max_contacts": (contact, "live"),
+    "max_contacts_created": (contact, "all"),
+    "max_organizations": (organization, "live"),
+    "max_organizations_created": (organization, "all"),
+    "max_open_opportunities": (opportunity, "open"),
+    "max_opportunities_created": (opportunity, "all"),
+    "max_interactions": (interaction, "all"),
+    "max_signals": (signal, "all"),
+    "max_proof_points": (proof_point, "all"),
+    "max_custom_fields": (field_def, "all"),
+    "max_pipeline_stages": (pipeline_stage, "all"),
+    "max_signal_types": (signal_type_table, "all"),
 }
 
 #: The counted limits a create of each kind is checked against, lifetime first: when both
@@ -514,10 +541,12 @@ async def _enforce_limits(
         return
     await _hold_limits_lock(conn, ctx, limits)
     for name, maximum in checks:
-        table, live_only = _COUNTED[name]
+        table, rows = _COUNTED[name]
         predicate = table.c.tenant_id == ctx.tenant_id
-        if live_only:
+        if rows == "live":
             predicate = and_(predicate, _live(table))
+        elif rows == "open":
+            predicate = and_(predicate, _open_deal())
         if await _count(conn, table, predicate) > maximum:
             raise LimitExceededError(name, maximum)
 
@@ -6140,6 +6169,7 @@ async def update_pipeline_stage(
     outcome: str | None = None,
     retired: bool | None = None,
     replaced_by: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[PipelineStage, str]:
     """Retire, restore or edit the stage under ``key``: only the arguments given.
 
@@ -6159,9 +6189,16 @@ async def update_pipeline_stage(
     it, and its key stays taken. ``retired=False`` clears both and puts it last among
     the live stages, or at ``position``. ``replaced_by`` names a live stage other than
     this one, and only a retired stage has one.
+
+    Changing a won or lost stage's outcome to open makes its live deals open, so it counts
+    toward ``limits.max_open_opportunities`` the way a move back to an open stage does: past
+    the limit it is refused whole (:class:`LimitExceededError`). It is the one stage edit
+    that can reopen a deal: retiring or restoring keeps the outcome, an open stage retires
+    only with no live deals, and no stage row is ever removed.
     """
     clean_key = normalize_stage_key(key)
     _check_position(position)
+    await _hold_limits_lock(conn, ctx, limits)
     stages = await _ensure_pipeline(conn, ctx)
     existing = next((row for row in stages if row["key"] == clean_key), None)
     if existing is None:
@@ -6305,6 +6342,8 @@ async def update_pipeline_stage(
                 .values(updated_at=now)
             )
     changed = bool(updates) or replace_it
+    if updates.get("outcome") == OPEN:
+        await _enforce_stage_reopen(conn, ctx, limits, clean_key)
     if retirement:
         action = "restored" if retired is False else "retired"
     else:
@@ -6326,6 +6365,41 @@ async def update_pipeline_stage(
             },
         )
     return PipelineStage.from_row(row), action
+
+
+async def _enforce_stage_reopen(
+    conn: AsyncConnection, ctx: Principal, limits: Limits | None, key: str
+) -> None:
+    """Refuse a stage's change to open when the deals it reopens take the account past
+    ``limits.max_open_opportunities``. Runs after the change, in its transaction, so the
+    count includes the reopened deals and a refusal rolls the change back. A stage that
+    holds no live deal reopens none, so it is never refused."""
+    if limits is None or limits.max_open_opportunities is None:
+        return
+    reopened = await _count(
+        conn,
+        opportunity,
+        and_(
+            opportunity.c.workspace_id == ctx.workspace_id,
+            opportunity.c.stage == key,
+            _live(opportunity),
+        ),
+    )
+    if not reopened:
+        return
+    try:
+        await _enforce_limits(conn, ctx, limits, ("max_open_opportunities",))
+    except LimitExceededError as exc:
+        raise LimitExceededError(
+            exc.limit,
+            exc.maximum,
+            next_step=(
+                f"Making stage {key!r} open would reopen its {_count_of(reopened, 'deal')}. "
+                "Close or delete deals first: move the decided ones to a won or lost stage "
+                "with move_opportunity, or delete an organization's deals with "
+                f"delete_organization; then retry. {_NO_LIMITS}"
+            ),
+        ) from exc
 
 
 def _check_position(position: int | None) -> None:
@@ -6423,8 +6497,9 @@ async def find_or_create_opportunity(
     the pipeline holds; entering a closing stage stamps ``closed_at``. ``fields``
     fills custom fields; on a match the row's own values stay.
 
-    A create counts toward ``limits.max_opportunities``; a replayed key does not
-    (:class:`LimitExceededError`).
+    A create counts toward ``limits.max_opportunities_created``, and toward
+    ``limits.max_open_opportunities`` when its stage is open; a replayed key counts toward
+    neither (:class:`LimitExceededError`).
     """
     _check_len("title", title, _CAP_NAME)
     _check_len("stage", stage, _CAP_SHORT)
@@ -6499,7 +6574,10 @@ async def find_or_create_opportunity(
         action = "created"
         row_id = insert_values["id"]
     if action == "created":
-        await _enforce_limits(conn, ctx, limits, ("max_opportunities",))
+        counted = ("max_opportunities_created", "max_open_opportunities")
+        await _enforce_limits(
+            conn, ctx, limits, counted if stage_row["outcome"] == OPEN else counted[:1]
+        )
 
     await write_audit(
         conn,
@@ -6588,6 +6666,7 @@ async def set_opportunity_stage(
     opportunity_id: str,
     stage: str,
     probability: int | None = None,
+    limits: Limits | None = None,
 ) -> Opportunity:
     """Move the opportunity to ``stage`` — the transition verb that owns ``closed_at``.
 
@@ -6595,13 +6674,21 @@ async def set_opportunity_stage(
     stage stamps ``closed_at``; an open stage clears it. The move takes the stage's
     default probability: the deal's own number is cleared unless ``probability``
     gives it a new one.
+
+    A move that makes a closed deal open again counts toward
+    ``limits.max_open_opportunities`` (:class:`LimitExceededError`). Whether the deal was
+    closed is its current stage row's outcome, read under the account's limits lock, so a
+    concurrent move cannot change it between the read and the count. Any other move is
+    never refused.
     """
     _check_len("stage", stage, _CAP_SHORT)
     _check_opportunity_numbers(None, probability)
     clean_stage = _clean(stage)
     if clean_stage is None:
         raise ValueError("stage must not be empty")
-    await _opportunity_row(conn, opportunity_id)  # 404 if out of scope
+    await _hold_limits_lock(conn, ctx, limits)
+    current = await _opportunity_row(conn, opportunity_id)  # 404 if out of scope
+    was_closed = current["outcome"] != OPEN
     stage_row = await _stage_for(conn, ctx, clean_stage)
     now = _now()
     await conn.execute(
@@ -6614,6 +6701,8 @@ async def set_opportunity_stage(
             updated_at=now,
         )
     )
+    if was_closed and stage_row["outcome"] == OPEN:
+        await _enforce_limits(conn, ctx, limits, ("max_open_opportunities",))
     row = await _opportunity_row(conn, opportunity_id)
     await write_audit(
         conn, ctx, entity="opportunity", action="set_stage", outcome="ok", entity_id=opportunity_id

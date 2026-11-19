@@ -101,8 +101,9 @@ class Limits:
 
     The store enforces each count inside the transaction of the write that would exceed it,
     counting the account's rows the caller's session can see. Where row-level security scopes
-    a session to one workspace, a limit holds per workspace. Only a create counts: a match,
-    an edit, a merge, an archive, a move or a delete is never refused at a count.
+    a session to one workspace, a limit holds per workspace. Only a create, and a reopen of
+    a closed deal, counts: a match, an edit, a merge, an archive, a delete, or a move or stage
+    edit that reopens no closed deal is never refused at a count.
 
     * ``max_contacts`` and ``max_organizations`` count the records not deleted; an archived
       record counts, and so does a discovered organization and the duplicate a merge
@@ -110,7 +111,12 @@ class Limits:
     * ``max_contacts_created`` and ``max_organizations_created`` count every record ever
       created, deleted and merged ones included, so delete-and-recreate cannot store more
       than they allow.
-    * ``max_opportunities`` counts the deals not deleted, won and lost ones included.
+    * ``max_open_opportunities`` counts the **open** deals: not deleted, and in a stage whose
+      outcome is neither won nor lost (a retired stage keeps its outcome; a stage the
+      pipeline does not name is open). Moving a deal to a won or lost stage frees room, and
+      a move that makes a closed deal open again counts.
+    * ``max_opportunities_created`` counts every deal ever created, closed and deleted ones
+      included: a lifetime allowance, so closing deals cannot store more than it allows.
     * ``max_interactions``, ``max_signals`` and ``max_proof_points`` count every record ever
       created: a lifetime allowance.
     * ``max_custom_fields`` counts every field definition across the three entities, retired
@@ -128,7 +134,8 @@ class Limits:
     max_contacts_created: int | None = None
     max_organizations: int | None = None
     max_organizations_created: int | None = None
-    max_opportunities: int | None = None
+    max_open_opportunities: int | None = None
+    max_opportunities_created: int | None = None
     max_interactions: int | None = None
     max_signals: int | None = None
     max_proof_points: int | None = None
@@ -202,7 +209,8 @@ class PeopleEvent(StrEnum):
     MAX_CONTACTS_CREATED_REFUSED = "max_contacts_created_refused"
     MAX_ORGANIZATIONS_REFUSED = "max_organizations_refused"
     MAX_ORGANIZATIONS_CREATED_REFUSED = "max_organizations_created_refused"
-    MAX_OPPORTUNITIES_REFUSED = "max_opportunities_refused"
+    MAX_OPEN_OPPORTUNITIES_REFUSED = "max_open_opportunities_refused"
+    MAX_OPPORTUNITIES_CREATED_REFUSED = "max_opportunities_created_refused"
     MAX_INTERACTIONS_REFUSED = "max_interactions_refused"
     MAX_SIGNALS_REFUSED = "max_signals_refused"
     MAX_PROOF_POINTS_REFUSED = "max_proof_points_refused"

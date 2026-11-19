@@ -1,7 +1,9 @@
 """Limits: what a runtime's :class:`~mcp_people.runtime.Limits` lets an account store.
 
 What these pin, for each limit: a create past it is refused and keeps nothing, one below it
-is not, and a match, an edit, a merge, an archive, a move or a delete is never refused at it.
+is not, and a match, an edit, a merge, an archive or a delete is never refused at it. A move,
+or a stage's outcome changed to open, that reopens a closed deal past the open limit is
+refused; any other move or stage edit is not.
 A live count frees room when a record is deleted or merged; a lifetime count does not, and
 an archived record counts in both. An import longer than ``max_import_rows`` is refused
 whole, and a row inside one that would create past a count is skipped under a reason naming
@@ -146,7 +148,7 @@ async def test_a_delete_frees_live_room_but_not_the_lifetime_allowance(ctx) -> N
         limits=limits,
     )
     assert "lifetime allowance of 3 contacts" in refusal.message
-    assert "does not free" in refusal.next_step
+    assert "Nothing frees this allowance" in refusal.next_step
 
 
 async def test_organizations_count_every_path_that_creates_one(ctx) -> None:
@@ -236,36 +238,68 @@ async def test_lookalikes_new_past_the_cap_are_skipped_and_held_ones_still_link(
 # --------------------------------------------------------------------------- #
 
 
-async def test_opportunities_refuse_at_the_live_cap_and_a_replay_or_move_is_not_refused(
-    ctx,
-) -> None:
-    limits = Limits(max_opportunities=1)
-    acme, _ = await _org(ctx, None, "acme.example")
-    deal, _ = await _run(
-        ctx,
-        store.find_or_create_opportunity,
-        title="Pilot",
-        organization_id=acme.id,
-        idempotency_key="k1",
-        limits=limits,
+async def _deal(ctx, limits, title: str, **kwargs):
+    return await _run(ctx, store.find_or_create_opportunity, title=title, limits=limits, **kwargs)
+
+
+async def _move(ctx, limits, deal_id: str, stage: str):
+    return await _run(
+        ctx, store.set_opportunity_stage, opportunity_id=deal_id, stage=stage, limits=limits
     )
-    _, action = await _run(
-        ctx,
-        store.find_or_create_opportunity,
-        title="Pilot",
-        organization_id=acme.id,
-        idempotency_key="k1",
-        limits=limits,
-    )
+
+
+async def test_open_deals_refuse_at_the_cap_and_a_replay_or_open_move_is_not_refused(ctx) -> None:
+    limits = Limits(max_open_opportunities=1)
+    deal, _ = await _deal(ctx, limits, "Pilot", idempotency_key="k1")
+    _, action = await _deal(ctx, limits, "Pilot", idempotency_key="k1")
     assert action == "matched"
     refusal = await _refused(
-        ctx, "max_opportunities", store.find_or_create_opportunity, title="Next", limits=limits
+        ctx, "max_open_opportunities", store.find_or_create_opportunity, title="Next", limits=limits
     )
-    assert "limit of 1 deal (max_opportunities)" in refusal.message
-    await _run(ctx, store.set_opportunity_stage, opportunity_id=deal.id, stage="closed_won")
+    assert "limit of 1 open deal (max_open_opportunities)" in refusal.message
+    assert "won or lost stage" in refusal.next_step
+    await _move(ctx, limits, deal.id, "proposal")  # open to open: never refused
+    # A deal created closed takes no open room.
+    _, action = await _deal(ctx, limits, "Lost already", stage="closed_lost")
+    assert action == "created"
+
+
+async def test_closing_a_deal_frees_open_room_and_reopening_one_counts(ctx) -> None:
+    limits = Limits(max_open_opportunities=1)
+    pilot, _ = await _deal(ctx, limits, "Pilot")
+    await _move(ctx, limits, pilot.id, "closed_won")
+    renewal, action = await _deal(ctx, limits, "Renewal")  # the won deal frees its slot
+    assert action == "created"
     await _refused(
-        ctx, "max_opportunities", store.find_or_create_opportunity, title="Next", limits=limits
-    )  # a won deal still counts
+        ctx,
+        "max_open_opportunities",
+        store.set_opportunity_stage,
+        opportunity_id=pilot.id,
+        stage="lead",
+        limits=limits,
+    )
+    stored, _ = await _run(ctx, store.get_opportunity, opportunity_id=pilot.id)
+    assert stored.stage == "closed_won"  # the refused move changed nothing
+    await _move(ctx, limits, pilot.id, "closed_lost")  # closed to closed: never refused
+    await _move(ctx, limits, renewal.id, "closed_lost")
+    await _move(ctx, limits, pilot.id, "negotiation")  # room again: the reopen counts and fits
+
+
+async def test_a_retired_closing_stage_keeps_its_deals_closed(ctx) -> None:
+    limits = Limits(max_open_opportunities=1)
+    pilot, _ = await _deal(ctx, limits, "Pilot")
+    await _move(ctx, limits, pilot.id, "closed_lost")
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=True)
+    _, action = await _deal(ctx, limits, "Renewal")
+    assert action == "created"
+
+
+async def test_deals_ever_created_count_closed_and_deleted_ones(ctx) -> None:
+    limits = Limits(max_opportunities_created=2)
+    acme, _ = await _org(ctx, None, "acme.example")
+    first, _ = await _deal(ctx, limits, "Pilot", organization_id=acme.id, idempotency_key="k1")
+    await _deal(ctx, limits, "Pilot", organization_id=acme.id, idempotency_key="k1")  # replay
+    second, _ = await _deal(ctx, limits, "Renewal", stage="closed_won")
     await _run(
         ctx,
         store.delete_organization,
@@ -273,8 +307,17 @@ async def test_opportunities_refuse_at_the_live_cap_and_a_replay_or_move_is_not_
         confirm=acme.id,
         delete_opportunities=True,
     )
-    _, action = await _run(ctx, store.find_or_create_opportunity, title="Next", limits=limits)
-    assert action == "created"
+    refusal = await _refused(
+        ctx,
+        "max_opportunities_created",
+        store.find_or_create_opportunity,
+        title="Next",
+        limits=limits,
+    )
+    assert "lifetime allowance of 2 deals" in refusal.message
+    assert "Nothing frees this allowance" in refusal.next_step
+    await _move(ctx, limits, second.id, "lead")  # a move never counts toward it
+    assert first.id
 
 
 async def test_interactions_are_a_lifetime_allowance_and_a_replay_is_not_refused(ctx) -> None:
@@ -685,3 +728,75 @@ async def test_lookalikes_past_the_limit_are_named_in_the_tool_next_step(limited
     assert not failed
     assert body["skipped"] == 1 and body["limit"] == "max_organizations"
     assert "max_organizations limit" in body["next_step"]
+
+
+async def test_reopening_a_deal_past_the_open_limit_is_refused_by_the_tool(limited) -> None:
+    events = limited(Limits(max_open_opportunities=1))
+    async with Client(server) as client:
+        _, made = await _call(client, "create_opportunity", title="Pilot", stage="closed_won")
+        deal_id = made["opportunity"]["id"]
+        failed, _ = await _call(client, "create_opportunity", title="Renewal")
+        assert not failed
+        failed, body = await _call(client, "move_opportunity", opportunity_id=deal_id, stage="lead")
+    assert failed
+    assert body["error"]["limit"] == "max_open_opportunities"
+    assert "won or lost stage" in body["next_step"]
+    assert (PeopleEvent.MAX_OPEN_OPPORTUNITIES_REFUSED, 1) in events
+
+
+async def test_making_a_closing_stage_open_past_the_limit_is_refused_by_the_tool(limited) -> None:
+    events = limited(Limits(max_open_opportunities=1))
+    async with Client(server) as client:
+        await _call(client, "create_opportunity", title="Pilot")
+        _, won = await _call(client, "create_opportunity", title="Renewal", stage="closed_won")
+        failed, body = await _call(
+            client, "update_pipeline_stage", key="closed_won", outcome="open"
+        )
+        assert failed
+        assert body["error"]["code"] == "invalid_request"
+        assert body["error"]["limit"] == "max_open_opportunities"
+        assert "would reopen its 1 deal" in body["next_step"]
+        assert "Close or delete deals first" in body["next_step"]
+        _, pipeline = await _call(client, "get_pipeline")
+        _, deal = await _call(client, "get_opportunity", opportunity_id=won["opportunity"]["id"])
+    stage = next(s for s in pipeline["stages"] if s["key"] == "closed_won")
+    assert stage["outcome"] == "won"  # nothing changed
+    assert deal["opportunity"]["closed_at"] is not None
+    assert (PeopleEvent.MAX_OPEN_OPPORTUNITIES_REFUSED, 1) in events
+
+
+async def test_making_a_closing_stage_open_under_the_limit_is_allowed_by_the_tool(limited) -> None:
+    limited(Limits(max_open_opportunities=2))
+    async with Client(server) as client:
+        await _call(client, "create_opportunity", title="Pilot")
+        await _call(client, "create_opportunity", title="Renewal", stage="closed_won")
+        failed, body = await _call(
+            client, "update_pipeline_stage", key="closed_won", outcome="open"
+        )
+    assert not failed, body
+    assert body["stage"]["outcome"] == "open"
+
+
+async def test_a_stage_reopening_no_deal_is_never_refused(ctx) -> None:
+    limits = Limits(max_open_opportunities=1)
+    await _deal(ctx, limits, "Pilot")
+    await _deal(ctx, limits, "Lost", stage="closed_lost")
+    # The won stage holds no deal, so making it open reopens none.
+    _, action = await _run(
+        ctx, store.update_pipeline_stage, key="closed_won", outcome="open", limits=limits
+    )
+    assert action == "updated"
+    # Retiring and restoring a closing stage keeps its outcome, so its deals stay closed.
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=True, limits=limits)
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=False, limits=limits)
+    # Restoring it as open in one call does reopen its deal, and counts.
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=True, limits=limits)
+    await _refused(
+        ctx,
+        "max_open_opportunities",
+        store.update_pipeline_stage,
+        key="closed_lost",
+        retired=False,
+        outcome="open",
+        limits=limits,
+    )
