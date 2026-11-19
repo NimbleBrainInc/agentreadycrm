@@ -419,7 +419,14 @@ class LimitExceededError(ValueError):
     skips a row for it as it skips a row for a bad value.
     """
 
-    def __init__(self, limit: str, maximum: int, *, size: int | None = None) -> None:
+    def __init__(
+        self,
+        limit: str,
+        maximum: int,
+        *,
+        size: int | None = None,
+        next_step: str | None = None,
+    ) -> None:
         self.limit = limit
         self.maximum = maximum
         if limit == "max_dossier_bytes":
@@ -440,7 +447,7 @@ class LimitExceededError(ValueError):
         else:
             noun = _LIMIT_WORDS[limit][0]
             self.reason = f"this account is at its limit of {_count_of(maximum, noun)}"
-        self.next_step = limit_next_step(limit)
+        self.next_step = next_step or limit_next_step(limit)
         self.message = f"{self.reason[0].upper()}{self.reason[1:]} ({limit}). Nothing was changed."
         super().__init__(self.message)
 
@@ -6162,6 +6169,7 @@ async def update_pipeline_stage(
     outcome: str | None = None,
     retired: bool | None = None,
     replaced_by: str | None = None,
+    limits: Limits | None = None,
 ) -> tuple[PipelineStage, str]:
     """Retire, restore or edit the stage under ``key``: only the arguments given.
 
@@ -6181,9 +6189,16 @@ async def update_pipeline_stage(
     it, and its key stays taken. ``retired=False`` clears both and puts it last among
     the live stages, or at ``position``. ``replaced_by`` names a live stage other than
     this one, and only a retired stage has one.
+
+    Changing a won or lost stage's outcome to open makes its live deals open, so it counts
+    toward ``limits.max_open_opportunities`` the way a move back to an open stage does: past
+    the limit it is refused whole (:class:`LimitExceededError`). It is the one stage edit
+    that can reopen a deal: retiring or restoring keeps the outcome, an open stage retires
+    only with no live deals, and no stage row is ever removed.
     """
     clean_key = normalize_stage_key(key)
     _check_position(position)
+    await _hold_limits_lock(conn, ctx, limits)
     stages = await _ensure_pipeline(conn, ctx)
     existing = next((row for row in stages if row["key"] == clean_key), None)
     if existing is None:
@@ -6327,6 +6342,8 @@ async def update_pipeline_stage(
                 .values(updated_at=now)
             )
     changed = bool(updates) or replace_it
+    if updates.get("outcome") == OPEN:
+        await _enforce_stage_reopen(conn, ctx, limits, clean_key)
     if retirement:
         action = "restored" if retired is False else "retired"
     else:
@@ -6348,6 +6365,41 @@ async def update_pipeline_stage(
             },
         )
     return PipelineStage.from_row(row), action
+
+
+async def _enforce_stage_reopen(
+    conn: AsyncConnection, ctx: Principal, limits: Limits | None, key: str
+) -> None:
+    """Refuse a stage's change to open when the deals it reopens take the account past
+    ``limits.max_open_opportunities``. Runs after the change, in its transaction, so the
+    count includes the reopened deals and a refusal rolls the change back. A stage that
+    holds no live deal reopens none, so it is never refused."""
+    if limits is None or limits.max_open_opportunities is None:
+        return
+    reopened = await _count(
+        conn,
+        opportunity,
+        and_(
+            opportunity.c.workspace_id == ctx.workspace_id,
+            opportunity.c.stage == key,
+            _live(opportunity),
+        ),
+    )
+    if not reopened:
+        return
+    try:
+        await _enforce_limits(conn, ctx, limits, ("max_open_opportunities",))
+    except LimitExceededError as exc:
+        raise LimitExceededError(
+            exc.limit,
+            exc.maximum,
+            next_step=(
+                f"Making stage {key!r} open would reopen its {_count_of(reopened, 'deal')}. "
+                "Close or delete deals first: move the decided ones to a won or lost stage "
+                "with move_opportunity, or delete an organization's deals with "
+                f"delete_organization; then retry. {_NO_LIMITS}"
+            ),
+        ) from exc
 
 
 def _check_position(position: int | None) -> None:

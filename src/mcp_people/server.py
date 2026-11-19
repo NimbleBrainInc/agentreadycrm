@@ -2036,6 +2036,7 @@ async def update_pipeline_stage(
                 outcome=outcome,
                 retired=retired,
                 replaced_by=replaced_by,
+                limits=runtime().limits(sctx),
             )
     except (ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="pipeline_stage", action="update", exc=exc)

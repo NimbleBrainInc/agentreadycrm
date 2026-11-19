@@ -740,3 +740,61 @@ async def test_reopening_a_deal_past_the_open_limit_is_refused_by_the_tool(limit
     assert body["error"]["limit"] == "max_open_opportunities"
     assert "won or lost stage" in body["next_step"]
     assert (PeopleEvent.MAX_OPEN_OPPORTUNITIES_REFUSED, 1) in events
+
+
+async def test_making_a_closing_stage_open_past_the_limit_is_refused_by_the_tool(limited) -> None:
+    events = limited(Limits(max_open_opportunities=1))
+    async with Client(server) as client:
+        await _call(client, "create_opportunity", title="Pilot")
+        _, won = await _call(client, "create_opportunity", title="Renewal", stage="closed_won")
+        failed, body = await _call(
+            client, "update_pipeline_stage", key="closed_won", outcome="open"
+        )
+        assert failed
+        assert body["error"]["code"] == "invalid_request"
+        assert body["error"]["limit"] == "max_open_opportunities"
+        assert "would reopen its 1 deal" in body["next_step"]
+        assert "Close or delete deals first" in body["next_step"]
+        _, pipeline = await _call(client, "get_pipeline")
+        _, deal = await _call(client, "get_opportunity", opportunity_id=won["opportunity"]["id"])
+    stage = next(s for s in pipeline["stages"] if s["key"] == "closed_won")
+    assert stage["outcome"] == "won"  # nothing changed
+    assert deal["opportunity"]["closed_at"] is not None
+    assert (PeopleEvent.MAX_OPEN_OPPORTUNITIES_REFUSED, 1) in events
+
+
+async def test_making_a_closing_stage_open_under_the_limit_is_allowed_by_the_tool(limited) -> None:
+    limited(Limits(max_open_opportunities=2))
+    async with Client(server) as client:
+        await _call(client, "create_opportunity", title="Pilot")
+        await _call(client, "create_opportunity", title="Renewal", stage="closed_won")
+        failed, body = await _call(
+            client, "update_pipeline_stage", key="closed_won", outcome="open"
+        )
+    assert not failed, body
+    assert body["stage"]["outcome"] == "open"
+
+
+async def test_a_stage_reopening_no_deal_is_never_refused(ctx) -> None:
+    limits = Limits(max_open_opportunities=1)
+    await _deal(ctx, limits, "Pilot")
+    await _deal(ctx, limits, "Lost", stage="closed_lost")
+    # The won stage holds no deal, so making it open reopens none.
+    _, action = await _run(
+        ctx, store.update_pipeline_stage, key="closed_won", outcome="open", limits=limits
+    )
+    assert action == "updated"
+    # Retiring and restoring a closing stage keeps its outcome, so its deals stay closed.
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=True, limits=limits)
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=False, limits=limits)
+    # Restoring it as open in one call does reopen its deal, and counts.
+    await _run(ctx, store.update_pipeline_stage, key="closed_lost", retired=True, limits=limits)
+    await _refused(
+        ctx,
+        "max_open_opportunities",
+        store.update_pipeline_stage,
+        key="closed_lost",
+        retired=False,
+        outcome="open",
+        limits=limits,
+    )
