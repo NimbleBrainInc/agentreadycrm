@@ -40,7 +40,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastmcp", specifier = ">=4,<5" },
     { name = "mcp", specifier = ">=2,<3" },
-    { name = "nimblebrain-server-sdk", specifier = "==0.7.2" },
+    { name = "nimblebrain-server-sdk", specifier = "==0.8.0" },
     { name = "pgkeyset", specifier = "==0.2.0" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "python-dotenv" },
@@ -840,7 +840,7 @@ wheels = [
 
 [[package]]
 name = "nimblebrain-server-sdk"
-version = "0.7.2"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp" },
@@ -848,9 +848,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/5d/bf677b3ed7fa45fcd811db325aaf7cf1f5dff414a746f730d0a3039606a2/nimblebrain_server_sdk-0.7.2.tar.gz", hash = "sha256:2411344224cadf692d3142f9a31b6a7a0edd404f7571f90ec661c7c09f5fed0b", size = 211502, upload-time = "2026-11-17T06:41:37.39Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/93/f16f26e54e00a8ec8c6a7f8ff454aec32b51d714ba290f236f647a4acb69/nimblebrain_server_sdk-0.8.0.tar.gz", hash = "sha256:3642906d42e7a40e9ec4993d726c15349036d07005c04f2c7c32fde30e6f7671", size = 218405, upload-time = "2026-11-18T20:49:29.92Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/59/15e096f08f140de29c8b5cf6fb7aa52a6c1d769d26cbf2d217bd9b0d1226/nimblebrain_server_sdk-0.7.2-py3-none-any.whl", hash = "sha256:90354fa987c00e051c2f95c85f79640564413b6b99659b76a4f94040da8a23dd", size = 112306, upload-time = "2026-11-17T06:41:35.561Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/40/5f03ec7bd91f603de84de680d0da26e0730a4e8a0374937c49793050544b/nimblebrain_server_sdk-0.8.0-py3-none-any.whl", hash = "sha256:60b4dc70491b4771366219c8f1e2054f7880c155060c51949200641a149009cb", size = 116586, upload-time = "2026-11-18T20:49:28.218Z" },
 ]
 
 [[package]]

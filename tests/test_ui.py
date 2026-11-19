@@ -167,4 +167,4 @@ def test_the_views_are_read_once_at_import(monkeypatch):
 def test_the_server_is_named_for_the_product():
     from mcp_people import server
 
-    assert server.mcp.name == "Agent Ready CRM"
+    assert server.mcp.name == "com.agentreadycrm/agentreadycrm"

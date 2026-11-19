@@ -55,8 +55,10 @@ from fastmcp.tools import ToolResult
 from mcp.server.lowlevel import NotificationOptions
 from mcp.types import TextContent, ToolAnnotations
 from nimblebrain_server_sdk import (
+    Placement,
     SkillDefinition,
     add_error_contract,
+    add_server_card,
     add_skills,
     announce_resource_list_changed,
     listing_row,
@@ -213,10 +215,18 @@ carries next_step: follow it. Hosts that load skills can read skill://people/SKI
 skill://people-evidence/SKILL.md for more."""
 
 
+#: The server's name, in the reverse-DNS form the Server Card requires, under the product's
+#: own domain. Its display name is the card's ``title``.
+SERVER_NAME = "com.agentreadycrm/agentreadycrm"
+
+#: The product's site, reported in ``serverInfo`` and on the Server Card.
+WEBSITE = "https://agentreadycrm.com"
+
 mcp: FastMCP = FastMCP(
-    "Agent Ready CRM",
+    SERVER_NAME,
     # SERVICE_VERSION when a deployment sets it, else the installed package's version.
     version=os.environ.get("SERVICE_VERSION") or package_version(),
+    website_url=WEBSITE,
     lifespan=_lifespan,
     # An exception no handler classified reaches the host as fixed text, never its message:
     # a tool returns its failures or raises one the error contract returns (below), and a
@@ -898,6 +908,48 @@ def people_ui_opportunities_build(build: str) -> str:
     """The CRM app's deal pipeline under a build key. Every key serves the current build."""
     del build
     return VIEW_HTML["opportunities"]
+
+
+# --------------------------------------------------------------------------- #
+# Server Card: what a host reads before it connects.                            #
+# --------------------------------------------------------------------------- #
+
+#: Where a NimbleBrain host places the views: the three lists as one app under the sidebar's
+#: Apps, each at its own route named after the product, and settings on the connector's
+#: settings page. They name the listed view URIs, which stay fixed across builds.
+PLACEMENTS: list[Placement] = [
+    {
+        "slot": "sidebar.apps",
+        "resourceUri": view_uri("contacts"),
+        "route": "agentreadycrm/contacts",
+        "label": "Contacts",
+        "priority": 100,
+    },
+    {
+        "slot": "sidebar.apps",
+        "resourceUri": view_uri("organizations"),
+        "route": "agentreadycrm/organizations",
+        "label": "Organizations",
+        "priority": 101,
+    },
+    {
+        "slot": "sidebar.apps",
+        "resourceUri": view_uri("opportunities"),
+        "route": "agentreadycrm/opportunities",
+        "label": "Opportunities",
+        "priority": 102,
+    },
+    {"slot": "settings", "resourceUri": view_uri("settings")},
+]
+
+# Served at <mcp-url>/server-card over streamable HTTP only. Its name, version and website are
+# serverInfo's; the title, description and placements are declared here.
+add_server_card(
+    mcp,
+    title="Agent Ready CRM",
+    description="A CRM for AI agents: organizations, contacts, deals and the evidence behind them.",
+    placements=PLACEMENTS,
+)
 
 
 # --------------------------------------------------------------------------- #

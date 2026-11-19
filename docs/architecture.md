@@ -140,6 +140,12 @@ anything but this server.
   read tools bind the first three, so a host renders a view for the call (see
   [MCP Apps hosts](#mcp-apps-hosts)); a host with placements of its own also opens a view by
   its URI or a record by its address.
+- **Server Card.** Over streamable HTTP the server serves its MCP Server Card at
+  `<mcp-url>/server-card`: its name (`com.agentreadycrm/agentreadycrm`), version and website as
+  `serverInfo` reports them, a title and description, and the placements a NimbleBrain host
+  reads to put the views in its navigation when the server is added by URL: contacts,
+  organizations and deals under the sidebar's Apps, settings on the connector's settings page.
+  Over stdio nothing is served.
 - **Writes announce, reads don't.** A tool that changes stored data sends one
   `notifications/resources/list_changed`; a read sends none, even one that writes an audit
   row, or every view would refresh itself forever.
