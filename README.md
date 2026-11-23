@@ -23,8 +23,9 @@ That serves MCP over stdio. To add it to Claude Code:
 claude mcp add agentreadycrm -- uvx agentreadycrm
 ```
 
-For Claude Desktop and other hosts that install MCP bundles, the bundle
-`@nimblebraininc/agentreadycrm` is available from [mpak](https://www.mpak.dev). It runs the
+For Claude Desktop and other hosts that install MCP bundles, download
+`agentreadycrm-<version>.mcpb` from the
+[latest release](https://github.com/NimbleBrainInc/agentreadycrm/releases/latest). It runs the
 same package and asks where to keep the database.
 
 Any other MCP client that starts a stdio server can run `uvx agentreadycrm` the same way. To
