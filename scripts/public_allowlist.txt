@@ -4,9 +4,6 @@
 # Python's name for the operating system, read to find the per-user data directory.
 sys\.pl[a]tform
 
-# The mcpb-pack action's inputs naming the operating system and CPU a bundle runs on.
-pl[a]tform-(os|arch)
-
 # "HQ" as an organization's headquarters, in that field's description.
 \bh[q] location\b
 
