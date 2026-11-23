@@ -4157,6 +4157,6 @@ def main() -> None:
     mcp.run()
 
 
-# Stdio entrypoint (mpak / Claude Desktop via python -m mcp_people.server).
+# Stdio entrypoint (Claude Desktop via python -m mcp_people.server).
 if __name__ == "__main__":
     main()
