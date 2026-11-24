@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Button, Inline, PageHeader, Spinner, Text, TextLink, tokens, useBreakpoint } from "@nimblebrain/synapse/ui";
 import { readAll, useCall } from "../api";
-import { DossierForm, EditOpportunityForm, LogInteractionForm } from "../components/forms";
-import { Dossier, OverflowMenu } from "../components/kit";
+import { EditOpportunityForm, LogInteractionForm } from "../components/forms";
+import { OverflowMenu } from "../components/kit";
 import { fmtDate, fmtMoney, markdownToHtml, outcomeTone } from "../format";
 import {
   type ApiError,
@@ -22,7 +22,7 @@ import {
 import { dealLines, DueChip, EmailValue } from "./cells";
 import { CustomFields, FieldLine, HISTORY, RecordLayout, RecordTimeline, Section, show, type TimelineEvent } from "./pagekit";
 
-type Modal = null | "edit" | "log" | "dossier";
+type Modal = null | "edit" | "log";
 // The lanes a deal's timeline filters by, besides Activity and History.
 const LANES = ["Touches"];
 
@@ -88,6 +88,7 @@ export function OpportunityPage({
   onBack,
   onLoaded,
   onOpen,
+  openInApp,
   refreshKey = 0,
 }: {
   opportunityId: string;
@@ -97,6 +98,8 @@ export function OpportunityPage({
   onLoaded: (title: string) => void;
   /** Open the account or the contact in place. */
   onOpen: (id: string) => void;
+  /** The control that opens this deal in the app's own page, where the host offers one. */
+  openInApp?: ReactNode;
   /** A change re-reads the deal in place, keeping any form open on the page. */
   refreshKey?: number;
 }) {
@@ -173,7 +176,16 @@ export function OpportunityPage({
       </Inline>
     );
   }
-  return <OpportunityView loaded={loaded} backLabel={backLabel} hostShowsTrail={hostShowsTrail} onBack={onBack} onOpen={onOpen} />;
+  return (
+    <OpportunityView
+      loaded={loaded}
+      backLabel={backLabel}
+      hostShowsTrail={hostShowsTrail}
+      onBack={onBack}
+      onOpen={onOpen}
+      openInApp={openInApp}
+    />
+  );
 }
 
 function OpportunityView({
@@ -182,12 +194,14 @@ function OpportunityView({
   hostShowsTrail,
   onBack,
   onOpen,
+  openInApp,
 }: {
   loaded: Loaded;
   backLabel: string;
   hostShowsTrail: boolean;
   onBack: () => void;
   onOpen: (id: string) => void;
+  openInApp?: ReactNode;
 }) {
   const call = useCall();
   const { ref, isNarrow: narrow } = useBreakpoint(820);
@@ -209,7 +223,6 @@ function OpportunityView({
   const menu = [
     ...(contact ? [{ label: "Log interaction", onSelect: () => setModal("log" as Modal) }] : []),
     { label: "Edit", onSelect: () => setModal("edit" as Modal) },
-    { label: "Notes", onSelect: () => setModal("dossier" as Modal) },
   ];
 
   return (
@@ -285,7 +298,12 @@ function OpportunityView({
               ) : null}
             </>
           }
-          actions={<OverflowMenu label="Actions" items={menu} />}
+          actions={
+            <Inline gap="0.5rem">
+              {openInApp}
+              <OverflowMenu label="Actions" items={menu} />
+            </Inline>
+          }
         />
       </div>
 
@@ -321,7 +339,12 @@ function OpportunityView({
               <FieldLine label="Added">{fmtDate(o.created_at)}</FieldLine>
             </Section>
             <Section title="Fields">
-              <CustomFields defs={loaded.defs} values={o.fields ?? undefined} details={o.field_details ?? undefined} />
+              <CustomFields
+                defs={loaded.defs}
+                values={o.fields ?? undefined}
+                details={o.field_details ?? undefined}
+                edit={{ kind: "opportunity", id: o.id }}
+              />
             </Section>
             <Section
               title="Account"
@@ -370,9 +393,6 @@ function OpportunityView({
                 </Text>
               )}
             </Section>
-            <Section title="Notes" action={<TextLink onClick={() => setModal("dossier")} style={{ fontSize: tokens.textXsSize }}>Edit</TextLink>}>
-              <Dossier markdown={o.dossier} />
-            </Section>
           </>
         }
         timeline={<RecordTimeline events={events} lanes={LANES} />}
@@ -380,7 +400,6 @@ function OpportunityView({
 
       {modal === "edit" ? <EditOpportunityForm opportunity={o} onClose={() => setModal(null)} /> : null}
       {modal === "log" && contact ? <LogInteractionForm contactId={contact.id} opportunityId={o.id} onClose={() => setModal(null)} /> : null}
-      {modal === "dossier" ? <DossierForm kind="opportunity" id={o.id} current={o.dossier} onClose={() => setModal(null)} /> : null}
     </div>
   );
 }

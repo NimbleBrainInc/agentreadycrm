@@ -1,8 +1,10 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { SegmentedControl, Text, TextLink, tokens } from "@nimblebrain/synapse/ui";
+import { FieldValueForm, type RecordKind } from "../components/forms";
 import { fmtDate } from "../format";
 import type { FieldDef, FieldDetails } from "../types";
 import { CustomMark } from "./cells";
+import { NewFieldForm } from "./FieldsView";
 
 // A record page: a column of cards holding label/value lines, with a custom
 // field's provenance one click away from its value, beside the record's timeline.
@@ -93,43 +95,84 @@ export function Section({
 /** How many set fields a card shows before "Show more". */
 const FIELDS_SHOWN = 5;
 
+/** A custom field's value, or a dash for none. */
+function FieldValue({ value }: { value: unknown }) {
+  if (value === undefined) {
+    return (
+      <Text size="sm" tone="faint">
+        –
+      </Text>
+    );
+  }
+  return <>{show(value)}</>;
+}
+
 /**
  * Every custom field defined for an entity, set or not, so an empty one is visible
  * as empty. The first few set fields show; the rest, and the empty ones, are one
  * click away.
+ *
+ * Given `edit`, the record is the one the card belongs to: each value opens in place to be
+ * set or cleared, and the card offers to define a new field for its kind. The server decides
+ * both writes, and its refusal (a value the field does not take, an account at its field
+ * limit, a viewer the host keeps from defining fields) shows as it words it.
  */
 export function CustomFields({
   defs,
   values,
   details,
+  edit,
 }: {
   defs: FieldDef[];
   values: Record<string, unknown> | undefined;
   details: Record<string, FieldDetails> | undefined;
+  edit?: { kind: RecordKind; id: string };
 }) {
   const [showAll, setShowAll] = useState(false);
   const [showEmpty, setShowEmpty] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const set = defs.filter((d) => values?.[d.key] !== undefined);
   const empty = defs.filter((d) => values?.[d.key] === undefined);
   const shown = showAll ? set : set.slice(0, FIELDS_SHOWN);
   const hidden = set.length - shown.length;
+
+  const line = (d: FieldDef, withDetails: boolean) => {
+    if (edit && editing === d.key) {
+      return (
+        <FieldValueForm key={d.key} kind={edit.kind} id={edit.id} def={d} value={values?.[d.key]} onClose={() => setEditing(null)} />
+      );
+    }
+    const value = <FieldValue value={values?.[d.key]} />;
+    return (
+      <FieldLine key={d.key} label={d.label} custom details={withDetails ? (details?.[d.key] ?? {}) : undefined}>
+        {edit ? (
+          <button
+            type="button"
+            aria-label={`Edit ${d.label}`}
+            title={`Edit ${d.label}`}
+            onClick={(e) => {
+              // The value sits in the line that opens its provenance; editing opens neither.
+              e.preventDefault();
+              e.stopPropagation();
+              setEditing(d.key);
+            }}
+            style={{ all: "unset", cursor: "text", display: "block", width: "100%", minHeight: "1.2em", overflowWrap: "anywhere" }}
+          >
+            {value}
+          </button>
+        ) : (
+          value
+        )}
+      </FieldLine>
+    );
+  };
+
   return (
     <>
-      {shown.map((d) => (
-        <FieldLine key={d.key} label={d.label} custom details={details?.[d.key] ?? {}}>
-          {show(values?.[d.key])}
-        </FieldLine>
-      ))}
-      {showEmpty
-        ? empty.map((d) => (
-            <FieldLine key={d.key} label={d.label} custom>
-              <Text size="sm" tone="faint">
-                –
-              </Text>
-            </FieldLine>
-          ))
-        : null}
-      <div style={{ display: "flex", gap: "0.9rem", marginTop: "0.2rem" }}>
+      {shown.map((d) => line(d, true))}
+      {showEmpty ? empty.map((d) => line(d, false)) : null}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.9rem", marginTop: "0.2rem" }}>
         {set.length > FIELDS_SHOWN ? (
           <TextLink onClick={() => setShowAll((s) => !s)} style={{ fontSize: tokens.textXsSize }}>
             {showAll ? "Show fewer" : `Show ${hidden} more`}
@@ -140,12 +183,18 @@ export function CustomFields({
             {showEmpty ? "Hide empty fields" : `${empty.length} empty ${empty.length === 1 ? "field" : "fields"}`}
           </TextLink>
         ) : null}
+        {edit ? (
+          <TextLink onClick={() => setAdding(true)} style={{ fontSize: tokens.textXsSize }}>
+            Add field
+          </TextLink>
+        ) : null}
       </div>
-      {defs.length === 0 ? (
+      {defs.length === 0 && !edit ? (
         <Text size="sm" tone="faint">
           No custom fields defined.
         </Text>
       ) : null}
+      {adding && edit ? <NewFieldForm entity={edit.kind} onClose={() => setAdding(false)} /> : null}
     </>
   );
 }

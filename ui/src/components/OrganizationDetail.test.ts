@@ -18,7 +18,6 @@ vi.mock("./forms", () => ({
       onChange: (e: { target: { value: string } }) => setName(e.target.value),
     });
   },
-  DossierForm: () => null,
 }));
 
 import { OrganizationDetail } from "./OrganizationDetail";
@@ -57,8 +56,8 @@ describe("a re-read of the open organization", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await render(0);
-    // One read is the organization, its people and its history, called together.
-    expect(call).toHaveBeenCalledTimes(3);
+    // One read is the organization, its fields, its people and its history, called together.
+    expect(call).toHaveBeenCalledTimes(4);
 
     const edit = [...container.querySelectorAll("button")].find((b) => b.textContent === "Edit");
     await act(async () => edit?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
@@ -73,7 +72,7 @@ describe("a re-read of the open organization", () => {
 
     await render(1);
 
-    expect(call).toHaveBeenCalledTimes(6);
+    expect(call).toHaveBeenCalledTimes(8);
     expect(call).toHaveBeenCalledWith("get_organization", { organization_id: "org_01A" });
     expect(call).toHaveBeenLastCalledWith("list_interactions", { organization_id: "org_01A", limit: 200 });
     expect(container.querySelector<HTMLInputElement>("input[data-form=edit]")?.value).toBe("Larkfield Ltd");
@@ -81,7 +80,7 @@ describe("a re-read of the open organization", () => {
 
   it("shows the newer read when two overlapping reads resolve out of order", async () => {
     const pending: ((value: unknown) => void)[] = [];
-    call.mockResolvedValueOnce(ORG).mockResolvedValueOnce(ORG).mockResolvedValueOnce(ORG);
+    call.mockResolvedValueOnce(ORG).mockResolvedValueOnce(ORG).mockResolvedValueOnce(ORG).mockResolvedValueOnce(ORG);
     call.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -90,11 +89,11 @@ describe("a re-read of the open organization", () => {
 
     await render(1);
     await render(2);
-    // Each read is three calls; settle the second read's three, then the first's.
-    expect(pending).toHaveLength(6);
+    // Each read is four calls; settle the second read's four, then the first's.
+    expect(pending).toHaveLength(8);
     const named = (name: string) => ({ ...ORG, organization: { ...ORG.organization, name } });
-    await act(async () => pending.slice(3).forEach((resolve) => resolve(named("Larkfield Newer"))));
-    await act(async () => pending.slice(0, 3).forEach((resolve) => resolve(named("Larkfield Older"))));
+    await act(async () => pending.slice(4).forEach((resolve) => resolve(named("Larkfield Newer"))));
+    await act(async () => pending.slice(0, 4).forEach((resolve) => resolve(named("Larkfield Older"))));
 
     expect(container.querySelector("h1, h2, h3, h4")?.textContent).toBe("Larkfield Newer");
   });

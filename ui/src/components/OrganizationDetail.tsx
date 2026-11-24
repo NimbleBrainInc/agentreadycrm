@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
-  Badge,
   Button,
   Divider,
   Heading,
@@ -11,10 +10,13 @@ import {
   Text,
 } from "@nimblebrain/synapse/ui";
 import { readAll, useCall } from "../api";
-import { fmtDate, statusTone } from "../format";
+import { fmtDate } from "../format";
+import { CustomFields } from "../people/pagekit";
 import {
   type ApiError,
   type Contact,
+  type DescribeFieldsResult,
+  type FieldDef,
   type GetOrganizationResult,
   type Interaction,
   isApiError,
@@ -22,31 +24,35 @@ import {
   type Organization,
 } from "../types";
 
-/** What the page shows: the organization, its open deals, its people and its history. */
+/** What the page shows: the organization, its custom fields, its open deals, its people and its history. */
 interface OrganizationView {
   organization: Organization;
+  defs: FieldDef[];
   deals: OpenDeal[];
   dealsTotal: number;
   contacts: Contact[];
   interactions: Interaction[];
 }
-import { Dossier, FieldRow, Timeline } from "./kit";
-import { DossierForm, EditOrganizationForm } from "./forms";
+import { FieldRow, Timeline } from "./kit";
+import { EditOrganizationForm } from "./forms";
 import { OpenDeals } from "./OpenDeals";
 import { SimilarCompanies } from "./SimilarCompanies";
 
-type Modal = null | "edit" | "dossier";
+type Modal = null | "edit";
 
 export function OrganizationDetail({
   organizationId,
   onNavigate,
   onLoaded,
+  openInApp,
   refreshKey = 0,
 }: {
   organizationId: string;
   onNavigate: (id: string) => void;
   /** The organization's name once read, for the trail the app reports. */
   onLoaded?: (name: string) => void;
+  /** The control that opens this organization in the app's own page, where the host offers one. */
+  openInApp?: ReactNode;
   /** A change re-reads the organization in place, keeping any form open on the page. */
   refreshKey?: number;
 }) {
@@ -59,8 +65,9 @@ export function OrganizationDetail({
   const [modal, setModal] = useState<Modal>(null);
 
   const load = useCallback(async (isStale: () => boolean) => {
-    const [res, people, history] = await Promise.all([
+    const [res, described, people, history] = await Promise.all([
       call<GetOrganizationResult | ApiError>("get_organization", { organization_id: organizationId }),
+      call<DescribeFieldsResult | ApiError>("list_fields", { entity: "organization" }),
       readAll<Contact>(call, "list_contacts", { organization_id: organizationId }, "contacts"),
       readAll<Interaction>(call, "list_interactions", { organization_id: organizationId }, "interactions"),
     ]);
@@ -75,6 +82,8 @@ export function OrganizationDetail({
     setError(null);
     setData({
       organization: res.organization,
+      // Fields that did not load leave the card with none to edit, not the page unreadable.
+      defs: isApiError(described) ? [] : (described.fields?.organization?.custom ?? []),
       deals: res.open_opportunities ?? [],
       dealsTotal: res.open_opportunities_total ?? 0,
       contacts: people,
@@ -126,9 +135,7 @@ export function OrganizationDetail({
         <Button variant="ghost" size="sm" onClick={() => setModal("edit")}>
           Edit
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => setModal("dossier")}>
-          Dossier
-        </Button>
+        {openInApp}
       </Inline>
 
       <Stack gap="0.5rem">
@@ -161,15 +168,15 @@ export function OrganizationDetail({
       <Divider />
 
       <Stack gap="0.5rem">
-        <Inline justify="between" align="baseline">
-          <Heading size="sm">Dossier</Heading>
-          {o.dossier_updated_at ? (
-            <Text size="xs" tone="faint">
-              updated {fmtDate(o.dossier_updated_at)}
-            </Text>
-          ) : null}
-        </Inline>
-        <Dossier markdown={o.dossier} />
+        <Heading size="sm">Fields</Heading>
+        <div>
+          <CustomFields
+            defs={data.defs}
+            values={o.fields}
+            details={o.field_details}
+            edit={{ kind: "organization", id: o.id }}
+          />
+        </div>
       </Stack>
 
       <Divider />
@@ -189,7 +196,6 @@ export function OrganizationDetail({
                 onClick={() => onNavigate(contact.id)}
                 title={contact.name}
                 meta={contact.title ?? undefined}
-                trailing={<Badge tone={statusTone(contact.effective_status)}>{contact.effective_status}</Badge>}
               />
             ))}
           </Stack>
@@ -210,14 +216,6 @@ export function OrganizationDetail({
       {modal === "edit" ? (
         <EditOrganizationForm
           organization={o}
-          onClose={() => setModal(null)}
-        />
-      ) : null}
-      {modal === "dossier" ? (
-        <DossierForm
-          kind="organization"
-          id={o.id}
-          current={o.dossier}
           onClose={() => setModal(null)}
         />
       ) : null}

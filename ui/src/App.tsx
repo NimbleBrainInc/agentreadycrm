@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { hostSupports } from "@nimblebrain/synapse";
 import {
   useApp,
   useDataSync,
   useModelContext,
+  useOpen,
   useToolInput,
   useToolResult,
   useTrail,
 } from "@nimblebrain/synapse/react";
-import { AppFrame, TextLink } from "@nimblebrain/synapse/ui";
+import { AppFrame, Button, Text, TextLink } from "@nimblebrain/synapse/ui";
 import { NewContactForm, NewOpportunityForm, NewOrganizationForm } from "./components/forms";
 import { OrganizationDetail } from "./components/OrganizationDetail";
 import { type ListState, RecordList } from "./people/RecordList";
@@ -50,6 +52,36 @@ const RECORD_URI = /^people:\/\/(contacts|organizations|opportunities)\/([a-z]+_
 function recordUri(id: string): string {
   const kind = kindOfId(id);
   return kind ? `people://${COLLECTION[kind]}/${id}` : id;
+}
+
+/**
+ * Asks the host to open a record in the app's own page. The host resolves the record's
+ * address to the view that shows it and hands the address to that view, which opens the
+ * record (`openAddress` below). A refusal, such as a workspace where the app has no page,
+ * shows as the host words it.
+ */
+function OpenInApp({ uri }: { uri: string }) {
+  const open = useOpen();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+      {error ? (
+        <Text size="xs" tone="danger">
+          {error}
+        </Text>
+      ) : null}
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          setError(null);
+          open(uri).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+        }}
+      >
+        Open in app
+      </Button>
+    </span>
+  );
 }
 
 /**
@@ -106,6 +138,12 @@ export default function App({ view }: { view: View }) {
   useDataSync(() => setDetailKey((k) => k + 1));
 
   const openKind = openId ? kindOfId(openId) : null;
+  // A view rendered for a tool call sits inline in a conversation. Where the host can also
+  // open the app's own page (it declares `ai.nimblebrain/open`), the open record offers to go
+  // there. A view the host placed as that page has no call, and a host without the extension
+  // (Claude, ChatGPT) gets no control.
+  const inline = toolName !== undefined || toolInput !== null || toolResult !== null;
+  const openInApp = openId && inline && hostSupports(app, "open") ? <OpenInApp uri={recordUri(openId)} /> : undefined;
   // Every view is one list over its entity's list tool; deals also draw as a board.
   const listed: Entity = view;
   const listing = !openId && !importing;
@@ -221,6 +259,7 @@ export default function App({ view }: { view: View }) {
                   onLoaded={setOpenLabel}
                   onOpenOrganization={setOpenId}
                   onOpenDeal={setOpenId}
+                  openInApp={openInApp}
                 />
               ) : null}
               {openId && openKind === "opportunity" ? (
@@ -233,6 +272,7 @@ export default function App({ view }: { view: View }) {
                   onBack={close}
                   onLoaded={setOpenLabel}
                   onOpen={setOpenId}
+                  openInApp={openInApp}
                 />
               ) : null}
               {openId && openKind === "organization" ? (
@@ -245,6 +285,7 @@ export default function App({ view }: { view: View }) {
                       organizationId={openId}
                       onNavigate={setOpenId}
                       onLoaded={setOpenLabel}
+                      openInApp={openInApp}
                     />
                   </div>
                 </div>

@@ -22,7 +22,7 @@ metadata:
 
 # Working the CRM
 
-The server's instructions hold the rules (resolve before you write, field or dossier,
+The server's instructions hold the rules (resolve before you write, facts go in fields,
 query rather than walk). This adds the patterns behind them.
 
 ## Bringing records in
@@ -56,7 +56,7 @@ you read more than one page.
 ## When a field is missing
 
 If the field you need is not in `list_fields` and you cannot define it, tell the user which
-field is missing. Do not store the value in a dossier or another field meanwhile: it could
+field is missing. Do not store the value in another field meanwhile: it could
 not be filtered, and the next agent would not find it.
 
 ## Showing a record

@@ -701,7 +701,7 @@ async def test_every_rollup_path_is_described() -> None:
         assert all(r["description"] and r["type"] for r in store.rollups(entity))
 
 
-async def test_every_core_field_but_the_dossier_is_a_filter_path() -> None:
+async def test_every_core_field_is_a_filter_path() -> None:
     from mcp_people.fields import CORE_FIELDS
 
     core = {
@@ -715,9 +715,8 @@ async def test_every_core_field_but_the_dossier_is_a_filter_path() -> None:
         "opportunity": store._OPPORTUNITY_REFS,
     }
     for entity, declared in CORE_FIELDS.items():
-        assert {key for key, _t, _d in declared} - core[entity] == {"dossier"}
+        assert {key for key, _t, _d in declared} <= core[entity]
         # The described type is the kind the path filters as, so a client can build
         # a filter from `describe_fields` alone.
         for key, described, _description in declared:
-            if key != "dossier":
-                assert refs[entity][key].kind == described, key
+            assert refs[entity][key].kind == described, key

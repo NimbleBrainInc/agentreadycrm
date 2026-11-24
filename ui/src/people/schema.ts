@@ -160,39 +160,31 @@ const ORGANIZATION_LABELS: Record<string, string> = {
   created_at: "Added",
 };
 
-// Core paths left out of the list: ids, the dossier's timestamp, and the paths
+// Core paths left out of the list: ids, timestamps no one filters by, and the paths
 // that restate another (`effective_status` is `status`).
 const HIDDEN = new Set([
   "organization_id",
   "effective_status",
-  "dossier",
-  "dossier_updated_at",
   "updated_at",
   "email_checked_at",
   "organization.status",
   "organization.source",
   "organization.website",
   "organization.revenue_range",
-  "organization.dossier",
-  "organization.dossier_updated_at",
   "organization.created_at",
   "organization.updated_at",
 ]);
 
 // Core paths an organization's own list leaves out.
-const ORGANIZATION_HIDDEN = new Set(["dossier", "dossier_updated_at", "updated_at"]);
+const ORGANIZATION_HIDDEN = new Set(["updated_at"]);
 // A deal's list leaves out its ids and the contact's own ids and stage.
 const OPPORTUNITY_HIDDEN = new Set([
   "organization_id",
   "primary_contact_id",
-  "dossier",
-  "dossier_updated_at",
   "updated_at",
   "contact.organization_id",
   "contact.status",
   "contact.effective_status",
-  "contact.dossier",
-  "contact.dossier_updated_at",
   "contact.email_checked_at",
   "contact.phone",
   "contact.lead_source",
@@ -204,8 +196,6 @@ const OPPORTUNITY_HIDDEN = new Set([
   "organization.source",
   "organization.website",
   "organization.revenue_range",
-  "organization.dossier",
-  "organization.dossier_updated_at",
   "organization.created_at",
   "organization.updated_at",
 ]);

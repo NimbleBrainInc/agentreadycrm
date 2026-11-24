@@ -14,7 +14,7 @@ directly. Every function:
   * returns Pydantic **wire models** (via ``Model.from_row``), never raw rows —
     ``tenant_id`` / ``workspace_id`` never cross the boundary.
   * records access on a split path. **Mutations** (find_or_create, update,
-    log_interaction, set_*_dossier) append a durable :data:`people_audit` row via
+    log_interaction, …) append a durable :data:`people_audit` row via
     :func:`write_audit` — the change record. **Denied/error attempts** (including
     failed reads, written from the server layer) also land in the table — they are
     the security-relevant events. **Successful reads** do NOT write a table row:
@@ -203,10 +203,7 @@ __all__ = [
     "record_signal",
     "remove_signal_for",
     "rollups",
-    "set_contact_dossier",
-    "set_opportunity_dossier",
     "set_opportunity_stage",
-    "set_organization_dossier",
     "update_contact",
     "update_opportunity",
     "update_organization",
@@ -227,9 +224,7 @@ _MAX_LIMIT = 200
 # migration every time a cap moves). We enforce length app-side at the start of
 # every write so an over-length value raises ``ValueError`` — which the tool
 # layer already maps to the structured ``invalid_request`` shape — rather than
-# silently bloating a row. The DOSSIER cap is the one that matters (it is the
-# only unbounded free-text store, 256 KiB); the rest are cheap insurance against
-# a runaway field. Values are checked AFTER trimming where the write trims.
+# silently bloating a row. The caps are cheap insurance against a runaway field. Values are checked AFTER trimming where the write trims.
 
 _CAP_NAME = 512
 _CAP_EMAIL = 320  # RFC 5321 max addressable length
@@ -239,7 +234,6 @@ _CAP_TITLE = 256
 _CAP_SHORT = 256  # the short open strings: industry/region/lead_source/status/source/kind
 _CAP_SUMMARY = 1024
 _CAP_BODY = 65536  # 64 KiB markdown detail
-_CAP_DOSSIER = 262144  # 256 KiB markdown research store — the load-bearing cap
 # Evidence records. A claim is one sentence and a quote is a
 # passage, not a page: caps that a real signal never approaches, so an
 # over-length value is a sign the caller is storing the article, not the evidence.
@@ -429,12 +423,7 @@ class LimitExceededError(ValueError):
     ) -> None:
         self.limit = limit
         self.maximum = maximum
-        if limit == "max_dossier_bytes":
-            self.reason = (
-                f"the dossier would be {_count_of(size or 0, 'byte')}, over this account's "
-                f"limit of {_count_of(maximum, 'byte')} per dossier"
-            )
-        elif limit == "max_import_rows":
+        if limit == "max_import_rows":
             self.reason = (
                 f"this account's imports take at most {_count_of(maximum, 'row')} per call, and "
                 f"this one has {size}"
@@ -455,11 +444,6 @@ class LimitExceededError(ValueError):
 def limit_next_step(limit: str) -> str:
     """What frees room under ``limit``, a :class:`~mcp_people.runtime.Limits` field, or that
     nothing does; it ends by naming the local install, which has no limits."""
-    if limit == "max_dossier_bytes":
-        return (
-            "Shorten the dossier to fit the limit and write it whole with dossier, or keep long "
-            f"material elsewhere and link to it. {_NO_LIMITS}"
-        )
     if limit == "max_import_rows":
         return f"Split the list into smaller parts and import each part. {_NO_LIMITS}"
     frees = _LIMIT_WORDS[limit][1]
@@ -1855,8 +1839,7 @@ _NOT_ARCHIVED = contact.c.archived_at.is_(None)
 _ORG_NOT_ARCHIVED = organization.c.archived_at.is_(None)
 
 # Read-time floor projection: the effective lifecycle stage derived
-# from stored facts — a dossier ⇒ ``enriched``, an outbound touch ⇒ ``contacted``,
-# an inbound touch ⇒ ``engaged``. Because the touch floors depend on RELATED rows,
+# from stored facts — an outbound touch ⇒ ``contacted``, an inbound touch ⇒ ``engaged``. Because the touch floors depend on RELATED rows,
 # the derivation lives in SQL (not the Python wire boundary): ``_EFFECTIVE_STATUS``
 # is both the ``effective_status`` column ``_contact_select`` returns AND the
 # expression ``list_contacts`` filters on — the same object, so the field and the
@@ -1892,7 +1875,6 @@ def _has_touch(direction: str) -> Any:
 
 _EFFECTIVE_STATUS = effective_status_sql(
     contact.c.status,
-    contact.c.dossier.isnot(None),
     _has_touch("outbound"),
     _has_touch("inbound"),
 )
@@ -1910,13 +1892,12 @@ def _contact_select() -> Select:
 
 # Fields a merge fills on the target from the source (empty target fields only).
 # Never identity, never name, never timestamps, never status (the merge archives
-# the SOURCE through archived_at); dossier carries its own timestamp alongside it.
+# the SOURCE through archived_at).
 _MERGE_FILL_FIELDS = (
     "email",
     "phone",
     "title",
     "organization_id",
-    "dossier",
     "lead_source",
     "source",
 )
@@ -1943,7 +1924,7 @@ async def merge_contacts(
       * **Repoints the signals about the source** (``signal.contact_id``) and the
         deals naming it as their contact (``opportunity.primary_contact_id``).
       * **Fills target's EMPTY fields from source only** (email + its status,
-        phone, title, organization_id, dossier + dossier_updated_at, lead_source,
+        phone, title, organization_id, lead_source,
         source, and each custom field the target does not hold) — it NEVER
         overwrites a field the target already has, the same fill-empty rule the
         dedupe merge uses.
@@ -2019,12 +2000,9 @@ async def merge_contacts(
     # source, every later pull would match the hidden row.
     refs_moved = await _move_refs(conn, entity="contact", source_id=source_id, target_id=target_id)
 
-    # Fill the target's EMPTY fields from the source (never overwrite). The
-    # dossier carries its own timestamp, so move dossier_updated_at alongside it.
+    # Fill the target's EMPTY fields from the source (never overwrite).
     candidate: dict[str, str | None] = {f: source_row.get(f) for f in _MERGE_FILL_FIELDS}
     updates = _merge_empty_only(target_row, candidate)
-    if "dossier" in updates:
-        updates["dossier_updated_at"] = source_row.get("dossier_updated_at")
     if "email" in updates:
         # The status grades the address, so it travels with it.
         updates["email_status"] = source_row.get("email_status")
@@ -2097,7 +2075,6 @@ _ORG_MERGE_FILL_FIELDS = (
     "employee_range",
     "revenue_range",
     "headquarters",
-    "dossier",
     "source",
 )
 
@@ -2139,8 +2116,7 @@ async def merge_organizations(
         target's unless only the source's is still active, and its live evidence
         rows are added to the one kept, so no purpose a signal served is lost.
       * **Fills the target's EMPTY fields from the source** — never overwriting,
-        the same fill-empty rule the dedupe merge uses. ``dossier_updated_at``
-        moves with ``dossier`` so the pair stays coherent.
+        the same fill-empty rule the dedupe merge uses.
       * **Archives the source** (sets ``archived_at``) rather than deleting it;
         an archived org drops out of search and of ``list_organizations`` unless
         ``include_archived``.
@@ -2272,8 +2248,6 @@ async def merge_organizations(
     # --- Fill the target's empty fields from the source. ---------------------
     candidate: dict[str, Any] = {f: source_row.get(f) for f in _ORG_MERGE_FILL_FIELDS}
     updates = _merge_empty_only(target_row, candidate)
-    if "dossier" in updates:
-        updates["dossier_updated_at"] = source_row.get("dossier_updated_at")
     fields_filled = [f for f in _ORG_MERGE_FILL_FIELDS if f in updates]
     inherited = _inherited_fields(target_row, source_row)
     if inherited:
@@ -3418,134 +3392,6 @@ async def log_interaction(
 
 
 # --------------------------------------------------------------------------- #
-# Dossiers                                                                     #
-# --------------------------------------------------------------------------- #
-
-
-async def set_contact_dossier(
-    conn: AsyncConnection,
-    ctx: Principal,
-    *,
-    contact_id: str,
-    dossier: str,
-    append: bool = False,
-    limits: Limits | None = None,
-) -> tuple[Contact, datetime | None]:
-    """Write a contact's dossier; stamp ``dossier_updated_at``. Returns ``(Contact, previous_ts)``.
-
-    An empty string **clears** the dossier (back to ``None``); ``append`` adds the
-    text after the current dossier instead (:func:`_write_dossier`). Returns the
-    *previous* ``dossier_updated_at`` so the tool can report staleness movement.
-    """
-    row = await _contact_row(conn, contact_id)  # 404 if out of scope
-    previous = row["dossier_updated_at"]
-    await _write_dossier(conn, contact, contact_id, dossier, append=append, limits=limits)
-    fresh = await _contact_row(conn, contact_id)
-    await write_audit(
-        conn, ctx, entity="contact", action="set_dossier", outcome="ok", entity_id=contact_id
-    )
-    return Contact.from_row(fresh, retired=await _retired_for(conn, "contact")), previous
-
-
-async def set_organization_dossier(
-    conn: AsyncConnection,
-    ctx: Principal,
-    *,
-    org_id: str,
-    dossier: str,
-    append: bool = False,
-    limits: Limits | None = None,
-) -> tuple[Organization, datetime | None]:
-    """Write an org's dossier; stamp ``dossier_updated_at``. Returns ``(Organization, previous_ts)``.
-
-    An empty string clears the dossier; ``append`` adds the text after the current
-    one instead. Returns the previous timestamp.
-    """
-    row = await _org_row(conn, org_id)  # 404 if out of scope
-    previous = row["dossier_updated_at"]
-    await _write_dossier(conn, organization, org_id, dossier, append=append, limits=limits)
-    fresh = await _org_row(conn, org_id)
-    await write_audit(
-        conn, ctx, entity="organization", action="set_dossier", outcome="ok", entity_id=org_id
-    )
-    return Organization.from_row(fresh, retired=await _retired_for(conn, "organization")), previous
-
-
-async def _write_dossier(
-    conn: AsyncConnection,
-    table: Any,
-    row_id: str,
-    dossier: str,
-    *,
-    append: bool,
-    limits: Limits | None = None,
-) -> None:
-    """Replace a row's dossier, or with ``append`` add to it, in one statement.
-
-    An append joins the text to the current dossier with a blank line between them
-    (``concat_ws`` skips an empty dossier), inside the UPDATE itself, so two
-    concurrent appends both land: no read-merge-write for a second writer to race.
-    The cap is checked on the joined text in the same statement; an append that
-    would pass it changes nothing and raises ``ValueError``. Appending nothing is
-    refused, since it cannot mean "clear". A row gone since the caller's scoped
-    read writes nothing and raises nothing here: the caller's re-read raises its
-    not-found error.
-
-    ``limits.max_dossier_bytes`` bounds the dossier as it would be stored, the joined text
-    for an append, the same way: a write past it changes nothing and raises
-    :class:`LimitExceededError`. Clearing is never refused.
-    """
-    _check_len("dossier", dossier, _CAP_DOSSIER)
-    limit = limits.max_dossier_bytes if limits is not None else None
-    now = _now()
-    if not append:
-        value, stamp = _dossier_value(dossier)
-        size = len(value.encode("utf-8")) if value is not None else 0
-        if limit is not None and size > limit:
-            raise LimitExceededError("max_dossier_bytes", limit, size=size)
-        await conn.execute(
-            table.update()
-            .where(table.c.id == row_id)
-            .values(dossier=value, dossier_updated_at=(now if stamp else None), updated_at=now)
-        )
-        return
-    text, _stamp = _dossier_value(dossier)
-    if text is None:
-        raise ValueError("append adds text to the dossier; pass the text to add")
-    joined = dialect.joined_text(conn.dialect.name, "\n\n", table.c.dossier, text)
-    size = dialect.byte_length(conn.dialect.name, joined)
-    cap = _CAP_DOSSIER if limit is None else min(limit, _CAP_DOSSIER)
-    written = await conn.execute(
-        table.update()
-        .where(table.c.id == row_id, size <= cap)
-        .values(dossier=joined, dossier_updated_at=now, updated_at=now)
-    )
-    if written.rowcount == 0:
-        found = await _one(conn, select(size.label("size")).where(table.c.id == row_id))
-        if found is None:
-            return
-        if limit is not None and found["size"] <= _CAP_DOSSIER:
-            raise LimitExceededError("max_dossier_bytes", limit, size=found["size"])
-        raise ValueError(
-            f"appending would take the dossier past its maximum length of {_CAP_DOSSIER} "
-            "bytes; rewrite it shorter without append"
-        )
-
-
-def _dossier_value(dossier: str) -> tuple[str | None, bool]:
-    """Map a dossier write to ``(stored_value, stamp_timestamp)``.
-
-    An empty/whitespace string clears the dossier (``None``) AND clears the
-    timestamp (no staleness signal for an absent dossier). A non-empty write
-    stores the text and stamps the timestamp.
-    """
-    cleaned = dossier.strip() if dossier is not None else ""
-    if not cleaned:
-        return None, False
-    return cleaned, True
-
-
-# --------------------------------------------------------------------------- #
 # Reads                                                                        #
 # --------------------------------------------------------------------------- #
 
@@ -3648,12 +3494,12 @@ async def page_contacts(
     core and custom fields, its organization's (``organization.<path>``), and the
     signal and interaction rollups. ``sort`` is a field path, ``-`` for descending;
     without one the order is newest first. ``columns`` returns only the paths
-    named, so a caller walking a large workspace is not handed every dossier.
+    named, so a caller walking a large workspace is not handed every field.
     RLS scopes the whole query to the caller's account and workspace.
 
     ``status`` matches the **effective** stage, as does the ``status``
-    filter path: ``sourced`` (the enrichment worklist) excludes a dossier'd contact
-    whose floor reads ``enriched``. Archived contacts (archived by :func:`archive_record`
+    filter path: ``sourced`` excludes a contact with an outbound touch, whose floor reads
+    ``contacted``. Archived contacts (archived by :func:`archive_record`
     or merged away by :func:`merge_contacts`) are excluded unless ``include_archived``.
     """
     limit = _clamp_limit(limit)
@@ -4757,7 +4603,7 @@ async def _field_patch(
                 f"Read list_fields(entity={entity!r}) for the defined keys, or define "
                 f"a new field with define_field(entity={entity!r}, key=..., label=..., "
                 "type=...) and retry. If you cannot call define_field, tell the user which "
-                "field is missing, and never write the value into a dossier instead."
+                "field is missing, and never write the value into another field instead."
             ),
         )
     now, default_by = _now(), _clean(by)
@@ -4995,7 +4841,6 @@ _CONTACT_REFS: dict[str, query.Ref] = {
         _core_ref("status", "text", _EFFECTIVE_STATUS),
         _core_ref("effective_status", "text", _EFFECTIVE_STATUS),
         _core_ref("archived_at", "timestamp", contact.c.archived_at),
-        _core_ref("dossier_updated_at", "timestamp", contact.c.dossier_updated_at),
         _core_ref("lead_source", "text", contact.c.lead_source),
         _core_ref("source", "text", contact.c.source),
         _core_ref("created_at", "timestamp", contact.c.created_at),
@@ -5052,7 +4897,6 @@ _ORGANIZATION_REFS: dict[str, query.Ref] = {
         _core_ref("status", "text", organization.c.status),
         _core_ref("archived_at", "timestamp", organization.c.archived_at),
         _core_ref("source", "text", organization.c.source),
-        _core_ref("dossier_updated_at", "timestamp", organization.c.dossier_updated_at),
         _core_ref("created_at", "timestamp", organization.c.created_at),
         _core_ref("updated_at", "timestamp", organization.c.updated_at),
     )
@@ -5106,7 +4950,6 @@ _OPPORTUNITY_REFS: dict[str, query.Ref] = {
         _core_ref("close_date", "date", cast(opportunity.c.close_date, SAText)),
         _core_ref("closed_at", "timestamp", opportunity.c.closed_at),
         _core_ref("source", "text", opportunity.c.source),
-        _core_ref("dossier_updated_at", "timestamp", opportunity.c.dossier_updated_at),
         _core_ref("created_at", "timestamp", opportunity.c.created_at),
         _core_ref("updated_at", "timestamp", opportunity.c.updated_at),
         _count_ref(
@@ -6710,36 +6553,6 @@ async def set_opportunity_stage(
     return Opportunity.from_row(row, retired=await _retired_for(conn, "opportunity"))
 
 
-async def set_opportunity_dossier(
-    conn: AsyncConnection,
-    ctx: Principal,
-    *,
-    opportunity_id: str,
-    dossier: str,
-    append: bool = False,
-    limits: Limits | None = None,
-) -> tuple[Opportunity, datetime | None]:
-    """Write an opportunity's dossier; stamp ``dossier_updated_at``. Returns ``(Opportunity, previous_ts)``.
-
-    An empty string clears the dossier (back to ``None``); ``append`` adds the text
-    after the current one instead. Returns the previous timestamp so the tool can
-    report staleness movement (mirrors :func:`set_contact_dossier`).
-    """
-    row = await _opportunity_row(conn, opportunity_id)  # 404 if out of scope
-    previous = row["dossier_updated_at"]
-    await _write_dossier(conn, opportunity, opportunity_id, dossier, append=append, limits=limits)
-    fresh = await _opportunity_row(conn, opportunity_id)
-    await write_audit(
-        conn,
-        ctx,
-        entity="opportunity",
-        action="set_dossier",
-        outcome="ok",
-        entity_id=opportunity_id,
-    )
-    return Opportunity.from_row(fresh, retired=await _retired_for(conn, "opportunity")), previous
-
-
 async def get_opportunity(
     conn: AsyncConnection, ctx: Principal, *, opportunity_id: str
 ) -> tuple[Opportunity, dict[str, int]]:
@@ -6934,11 +6747,6 @@ async def pipeline_summary(
 # about an account attested by a URL anyone can open; a `proof_point` is
 # a claim about our own work attested by a person who says they stand behind it.
 # Neither is ever deleted: a signal is withdrawn, a proof point is re-attested.
-#
-# The dossier is untouched by all of this. It stays the PROSE SYNTHESIS above the
-# evidence rows — "here is what we think about this account" — and these records
-# are what it must be answerable to. Nothing here migrates dossier content, and
-# no read here parses it.
 
 
 async def _signal_row(conn: AsyncConnection, signal_id: str, *, lock: bool = False) -> RowMapping:

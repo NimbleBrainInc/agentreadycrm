@@ -7,8 +7,7 @@ refused; any other move or stage edit is not.
 A live count frees room when a record is deleted or merged; a lifetime count does not, and
 an archived record counts in both. An import longer than ``max_import_rows`` is refused
 whole, and a row inside one that would create past a count is skipped under a reason naming
-the limit while the rest commit. A dossier is bounded as it would be stored, so an append is
-measured by the joined text. ``None`` limits nothing. Through the tools, a refusal is
+the limit while the rest commit. ``None`` limits nothing. Through the tools, a refusal is
 ``invalid_request`` with ``limit`` naming the field, a ``next_step`` naming what frees room
 and the local install, and that field's event.
 """
@@ -88,7 +87,6 @@ async def test_none_limits_nothing(ctx) -> None:
     for limits in (None, Limits()):
         for i in range(3):
             _, action = await _contact(ctx, limits, f"p{i}@acme.example")
-        await _run(ctx, store.set_contact_dossier, contact_id=_.id, dossier="x" * 5000)
     assert await _count(ctx, contact) == 3
 
 
@@ -461,54 +459,6 @@ async def test_signal_types_are_a_lifetime_allowance(ctx) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Dossiers                                                                     #
-# --------------------------------------------------------------------------- #
-
-
-async def test_a_dossier_is_bounded_as_stored_on_a_write_and_an_append(ctx) -> None:
-    limits = Limits(max_dossier_bytes=12)
-    person, _ = await _contact(ctx, None, "a@acme.example")
-    write = {"contact_id": person.id, "limits": limits}
-    await _run(ctx, store.set_contact_dossier, dossier="  ten bytes!  ", **write)
-    await _run(ctx, store.set_contact_dossier, dossier="é" * 6, **write)  # 12 bytes
-    refusal = await _refused(
-        ctx, "max_dossier_bytes", store.set_contact_dossier, dossier="é" * 7, **write
-    )
-    assert "14 bytes" in refusal.message and "12 bytes per dossier" in refusal.message
-
-    await _run(ctx, store.set_contact_dossier, dossier="abcdefgh", **write)
-    await _run(ctx, store.set_contact_dossier, dossier="xy", append=True, **write)  # 8+2+2
-    await _refused(
-        ctx, "max_dossier_bytes", store.set_contact_dossier, dossier="z", append=True, **write
-    )
-    stored, _ = await _run(ctx, store.get_contact, contact_id=person.id)
-    assert stored.dossier == "abcdefgh\n\nxy"
-    await _run(ctx, store.set_contact_dossier, dossier="", **write)  # clearing is never refused
-
-
-async def test_the_dossier_limit_binds_organizations_and_deals(ctx) -> None:
-    limits = Limits(max_dossier_bytes=4)
-    acme, _ = await _org(ctx, None, "acme.example")
-    deal, _ = await _run(ctx, store.find_or_create_opportunity, title="Pilot")
-    await _refused(
-        ctx,
-        "max_dossier_bytes",
-        store.set_organization_dossier,
-        org_id=acme.id,
-        dossier="12345",
-        limits=limits,
-    )
-    await _refused(
-        ctx,
-        "max_dossier_bytes",
-        store.set_opportunity_dossier,
-        opportunity_id=deal.id,
-        dossier="12345",
-        limits=limits,
-    )
-
-
-# --------------------------------------------------------------------------- #
 # Imports                                                                      #
 # --------------------------------------------------------------------------- #
 
@@ -697,20 +647,6 @@ async def test_an_import_over_the_row_limit_is_refused_by_the_tool(limited) -> N
     assert failed
     assert body["error"]["limit"] == "max_import_rows"
     assert "Split the list" in body["next_step"]
-
-
-async def test_a_dossier_append_past_the_limit_is_refused_by_the_tool(limited) -> None:
-    limited(Limits(max_dossier_bytes=10))
-    async with Client(server) as client:
-        _, made = await _call(client, "find_or_create_contact", email="a@acme.example")
-        contact_id = made["contact"]["id"]
-        failed, _ = await _call(client, "update_contact", contact_id=contact_id, dossier="12345")
-        assert not failed
-        failed, body = await _call(
-            client, "update_contact", contact_id=contact_id, dossier_append="12345"
-        )
-    assert failed
-    assert body["error"]["limit"] == "max_dossier_bytes"
 
 
 async def test_lookalikes_past_the_limit_are_named_in_the_tool_next_step(limited) -> None:

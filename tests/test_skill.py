@@ -4,7 +4,7 @@ Mirrors ``test_ui.py``: importing ``mcp_people.server`` touches no database (the
 engine is lazy), so these lock the skill resource's registration and content
 without a database. The skill is bundled inside the package and pointed
 at by the server instructions, so a connecting agent loads tool-selection
-guidance (resolve/dedup via find_or_create_*; dossier vs structured fields).
+guidance (resolve/dedup via find_or_create_*; facts go in fields).
 """
 
 import asyncio
@@ -28,9 +28,9 @@ def test_skill_resource_serves_the_bundled_guidance():
     body = result.contents[0].content
     assert isinstance(body, str)
     assert body == SKILL_CONTENT
-    # The load-bearing guidance: resolve/dedup with find_or_create; dossier vs fields.
+    # The load-bearing guidance: resolve/dedup with find_or_create; facts go in fields.
     assert "find_or_create" in body
-    assert "dossier" in body.lower()
+    assert "list_fields" in body
 
 
 def test_server_instructions_point_at_the_skill():

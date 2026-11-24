@@ -1,5 +1,5 @@
 {
-  "instructions": "A CRM of organizations, contacts, the interactions with them, deals in a pipeline, and the evidence behind a claim.\n\nResolve before you write. find_or_create_contact and find_or_create_organization return the record you already hold (by external reference, email or domain, else name), so call one once per person or company with everything you know. To change a record use update_*; to join two records of one person or company use merge_*, after the user confirms. A deal has no natural key: check list_opportunities(organization_id=..., query=...) before create_opportunity.\n\nField or dossier. Anything you would filter, sort or count by is a field: list_fields lists them, define_field adds one, and update_*(fields={key: value}) writes it. What is only read is the dossier: update_*(dossier_append=...). A fact about a company goes on the organization, never on each of its contacts. A fact you would cite is a signal (record_signal) or a proof point (record_proof_point), not dossier prose.\n\nQuery, don't walk. list_contacts, list_organizations and list_opportunities take a free-text query, a filter, a sort and columns, a page at a time; count_records says how a workspace divides in one call. A filter is {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} / {\"or\": [...]} of those. Operators by field type: text eq, ne, in, not_in, contains, starts_with; select eq, ne, in, not_in; number and date eq, ne, gt, gte, lt, lte, between; timestamp gt, gte, lt, lte, between; boolean eq; list and multi_select has, has_all; any field is_set (true or false).\n\nIds (ct_, org_, op_, sg_, pp_) come from a result; never construct one. Every result carries next_step: follow it. Hosts that load skills can read skill://people/SKILL.md and skill://people-evidence/SKILL.md for more.",
+  "instructions": "A CRM of organizations, contacts, the interactions with them, deals in a pipeline, and the evidence behind a claim.\n\nResolve before you write. find_or_create_contact and find_or_create_organization return the record you already hold (by external reference, email or domain, else name), so call one once per person or company with everything you know. To change a record use update_*; to join two records of one person or company use merge_*, after the user confirms. A deal has no natural key: check list_opportunities(organization_id=..., query=...) before create_opportunity.\n\nFacts go in fields. Anything you would filter, sort or count by is a field: list_fields lists them, define_field adds one, and update_*(fields={key: value}) writes it. A fact about a company goes on the organization, never on each of its contacts. A fact you would cite is a signal (record_signal) or a proof point (record_proof_point).\n\nQuery, don't walk. list_contacts, list_organizations and list_opportunities take a free-text query, a filter, a sort and columns, a page at a time; count_records says how a workspace divides in one call. A filter is {\"field\": path, \"op\": op, \"value\": v}, or {\"and\": [...]} / {\"or\": [...]} of those. Operators by field type: text eq, ne, in, not_in, contains, starts_with; select eq, ne, in, not_in; number and date eq, ne, gt, gte, lt, lte, between; timestamp gt, gte, lt, lte, between; boolean eq; list and multi_select has, has_all; any field is_set (true or false).\n\nIds (ct_, org_, op_, sg_, pp_) come from a result; never construct one. Every result carries next_step: follow it. Hosts that load skills can read skill://people/SKILL.md and skill://people-evidence/SKILL.md for more.",
   "capabilities": {
     "logging": {},
     "prompts": {
@@ -999,7 +999,7 @@
     {
       "name": "get_contact",
       "title": "Get Contact",
-      "description": "Read one contact in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.\n\nCall it when you hold a contact's id and need what is known about them before you act:\nbefore writing to them, before a call, or to answer a question about them. The 5 newest\ninteractions come without their bodies; ``list_interactions(contact_id=...)`` pages\nthrough all of them in full. The 5 newest open deals naming them as their contact come\nwith their title, stage and value; ``list_opportunities(primary_contact_id=...)`` lists\nevery one. To find a contact whose id you do not hold, use\n``list_contacts(query=...)``.\n\nA host that shows views opens this contact for this call, with its open deals.",
+      "description": "Read one contact in full: fields, counts, external references, the 5 newest interactions and open deals.\n\nCall it when you hold a contact's id and need what is known about them before you act:\nbefore writing to them, before a call, or to answer a question about them. The 5 newest\ninteractions come without their bodies; ``list_interactions(contact_id=...)`` pages\nthrough all of them in full. The 5 newest open deals naming them as their contact come\nwith their title, stage and value; ``list_opportunities(primary_contact_id=...)`` lists\nevery one. To find a contact whose id you do not hold, use\n``list_contacts(query=...)``.\n\nA host that shows views opens this contact for this call, with its open deals.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1039,7 +1039,7 @@
     {
       "name": "get_opportunity",
       "title": "Get Opportunity",
-      "description": "Read one deal in full: fields, dossier, counts and the 5 newest interactions logged against it.\n\nCall it when you hold a deal's id and need where it stands before you act or answer. The\n5 newest interactions come without their bodies; ``list_interactions(opportunity_id=...)``\npages through all of them in full. To find a deal whose id you do not hold, use\n``list_opportunities(query=...)``.\n\nA host that shows views opens this deal for this call.",
+      "description": "Read one deal in full: fields, counts and the 5 newest interactions logged against it.\n\nCall it when you hold a deal's id and need where it stands before you act or answer. The\n5 newest interactions come without their bodies; ``list_interactions(opportunity_id=...)``\npages through all of them in full. To find a deal whose id you do not hold, use\n``list_opportunities(query=...)``.\n\nA host that shows views opens this deal for this call.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1079,7 +1079,7 @@
     {
       "name": "get_organization",
       "title": "Get Organization",
-      "description": "Read one organization in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.\n\nCall it when you hold an organization's id and need what is known about the company\nbefore you act or answer. The 5 newest interactions, with anyone there, come without\ntheir bodies; ``list_interactions(organization_id=...)`` pages through all of them, and\n``list_contacts(organization_id=...)`` lists its people. The 5 newest open deals on the\naccount come with their title, stage and value;\n``list_opportunities(organization_id=...)`` lists every one. To find an organization whose id\nyou do not hold, use ``list_organizations(query=...)``.\n\nA host that shows views opens this organization for this call, with its open deals.",
+      "description": "Read one organization in full: fields, counts, external references, the 5 newest interactions and open deals.\n\nCall it when you hold an organization's id and need what is known about the company\nbefore you act or answer. The 5 newest interactions, with anyone there, come without\ntheir bodies; ``list_interactions(organization_id=...)`` pages through all of them, and\n``list_contacts(organization_id=...)`` lists its people. The 5 newest open deals on the\naccount come with their title, stage and value;\n``list_opportunities(organization_id=...)`` lists every one. To find an organization whose id\nyou do not hold, use ``list_organizations(query=...)``.\n\nA host that shows views opens this organization for this call, with its open deals.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1624,7 +1624,7 @@
               }
             ],
             "default": null,
-            "description": "Return only these paths per row (plus id and uri), e.g. [\"name\", \"title\"].\nWithout it each row is the whole contact but its dossier."
+            "description": "Return only these paths per row (plus id and uri), e.g. [\"name\", \"title\"].\nWithout it each row is the whole contact."
           },
           "limit": {
             "default": 50,
@@ -1671,7 +1671,7 @@
     {
       "name": "list_fields",
       "title": "List Fields",
-      "description": "List the fields of contacts, organizations and deals: the core ones and this workspace's custom ones.\n\nRead it before writing ``fields={...}``, filtering, sorting or counting, to learn which\nkeys exist, their types and options, and what each one means. Every key it lists but\ndossier is a path the list tools and count_records take, and a contact also reaches its\norganization's as ``organization.<key>``. When the field you need is missing and you\ncannot add it with ``define_field``, tell the user which field is missing rather than\nstoring the value in a dossier or another field.",
+      "description": "List the fields of contacts, organizations and deals: the core ones and this workspace's custom ones.\n\nRead it before writing ``fields={...}``, filtering, sorting or counting, to learn which\nkeys exist, their types and options, and what each one means. Every key it lists is a\npath the list tools and count_records take, and a contact also reaches its\norganization's as ``organization.<key>``. When the field you need is missing and you\ncannot add it with ``define_field``, tell the user which field is missing rather than\nstoring the value in another field.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1918,7 +1918,7 @@
               }
             ],
             "default": null,
-            "description": "Return only these paths per row (plus id and uri), e.g. [\"title\", \"stage\",\n\"value\", \"organization.name\"]. Without it each row is the whole deal but its\ndossier."
+            "description": "Return only these paths per row (plus id and uri), e.g. [\"title\", \"stage\",\n\"value\", \"organization.name\"]. Without it each row is the whole deal."
           },
           "limit": {
             "default": 50,
@@ -2058,7 +2058,7 @@
               }
             ],
             "default": null,
-            "description": "Return only these paths per row (plus id and uri), e.g. [\"name\", \"fit\"].\nWithout it each row is the whole organization but its dossier."
+            "description": "Return only these paths per row (plus id and uri), e.g. [\"name\", \"fit\"].\nWithout it each row is the whole organization."
           },
           "limit": {
             "default": 50,
@@ -2361,7 +2361,7 @@
     {
       "name": "log_interaction",
       "title": "Log Interaction",
-      "description": "Record a touch with a contact: a meeting, email, call, note or piece of research.\n\nCall it after anything happens with a person that the next agent should know: a message\nsent or received, a call, a meeting, or research done on them. It is also filed under the\norganization the contact works at now, and under a deal when you give ``opportunity_id``.\nGive a direction on an email, call or meeting so the contact's stage advances (outbound to\ncontacted, inbound to engaged). For lasting research about a person or company rather\nthan one event, write the dossier with ``update_contact`` or ``update_organization``.",
+      "description": "Record a touch with a contact: a meeting, email, call, note or piece of research.\n\nCall it after anything happens with a person that the next agent should know: a message\nsent or received, a call, a meeting, or research done on them. It is also filed under the\norganization the contact works at now, and under a deal when you give ``opportunity_id``.\nGive a direction on an email, call or meeting so the contact's stage advances (outbound to\ncontacted, inbound to engaged). For lasting research about a person or company rather\nthan one event, set a field with ``update_contact`` or ``update_organization``, or record a\nsignal.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2783,7 +2783,7 @@
     {
       "name": "record_signal",
       "title": "Record Signal",
-      "description": "Record one fact about an organization, with the source's own words that prove it.\n\nCall it when you have read a real source saying something about an account that anyone\nciting it could check: the ``claim`` is your sentence, the ``evidence_quote`` is theirs,\nverbatim, and the ``source_url`` is where a reviewer opens it. Finding nothing worth\nrecording is a good outcome: record no signal rather than a weak one. For a claim about\nour own work use ``record_proof_point``; for research prose, the dossier. Recording the\nsame source and type for the account again returns the signal already held; if that key\nholds a different fact, yours is not stored and next_step says so.",
+      "description": "Record one fact about an organization, with the source's own words that prove it.\n\nCall it when you have read a real source saying something about an account that anyone\nciting it could check: the ``claim`` is your sentence, the ``evidence_quote`` is theirs,\nverbatim, and the ``source_url`` is where a reviewer opens it. Finding nothing worth\nrecording is a good outcome: record no signal rather than a weak one. For a claim about\nour own work use ``record_proof_point``. Recording the same source and type for the\naccount again returns the signal already held; if that key holds a different fact, yours\nis not stored and next_step says so.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2938,7 +2938,7 @@
     {
       "name": "update_contact",
       "title": "Update Contact",
-      "description": "Change a contact you hold: their fields, custom fields, external references or research dossier.\n\nCall it to correct or add to a contact once you have their id. Only the arguments you\npass change; one you omit keeps its value, and a core field cannot be cleared here. To\nrecord that you spoke with them use ``log_interaction`` instead: setting status records no\ntouch. To join a duplicate use ``merge_contacts``; for someone you may not hold yet,\n``find_or_create_contact``.",
+      "description": "Change a contact you hold: their fields, custom fields or external references.\n\nCall it to correct or add to a contact once you have their id. Only the arguments you\npass change; one you omit keeps its value, and a core field cannot be cleared here. To\nrecord that you spoke with them use ``log_interaction`` instead: setting status records no\ntouch. To join a duplicate use ``merge_contacts``; for someone you may not hold yet,\n``find_or_create_contact``.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -3128,30 +3128,6 @@
             ],
             "default": null,
             "description": "References this contact holds to detach, such as one attached to\nthe wrong person."
-          },
-          "dossier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Replace the research dossier with this markdown; \"\" clears it. The dossier is\nfor what is read, not filtered: anything you would filter or sort on is a field."
-          },
-          "dossier_append": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Add this markdown after the current dossier, with a blank line between;\na concurrent writer's addition is kept. Refused when the dossier would pass its\nmaximum length. Not with dossier."
           }
         },
         "required": [
@@ -3165,7 +3141,7 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false
       },
       "_meta": {
@@ -3326,7 +3302,7 @@
     {
       "name": "update_opportunity",
       "title": "Update Opportunity",
-      "description": "Change a deal you hold: its title, value, probability, close date, primary contact, custom fields or research dossier.\n\nCall it to correct or add to a deal once you have its id. Only the arguments you pass\nchange; one you omit keeps its value, and a core field cannot be cleared here. It never\nchanges the stage: ``move_opportunity`` does, with its side effects. To create a deal use\n``create_opportunity``.",
+      "description": "Change a deal you hold: its title, value, probability, close date, primary contact or custom fields.\n\nCall it to correct or add to a deal once you have its id. Only the arguments you pass\nchange; one you omit keeps its value, and a core field cannot be cleared here. It never\nchanges the stage: ``move_opportunity`` does, with its side effects. To create a deal use\n``create_opportunity``.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -3446,30 +3422,6 @@
             ],
             "default": null,
             "description": "Who is setting these fields, when the values do not say."
-          },
-          "dossier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Replace the research dossier with this markdown; \"\" clears it. The dossier is\nfor what is read, not filtered: anything you would filter or sort on is a field."
-          },
-          "dossier_append": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Add this markdown after the current dossier, with a blank line between;\na concurrent writer's addition is kept. Refused when the dossier would pass its\nmaximum length. Not with dossier."
           }
         },
         "required": [
@@ -3483,7 +3435,7 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false
       },
       "_meta": {
@@ -3496,7 +3448,7 @@
     {
       "name": "update_organization",
       "title": "Update Organization",
-      "description": "Change an organization you hold: its fields, custom fields, external references or research dossier.\n\nCall it to correct or add to an organization once you have its id. Only the arguments you\npass change; one you omit keeps its value, and a core field cannot be cleared here.\nEditing a discovered lookalike leaves it discovered: ``promote_organization`` is the\ndecision to work it. For a company you may not hold yet use\n``find_or_create_organization``; to join a duplicate, ``merge_organizations``.",
+      "description": "Change an organization you hold: its fields, custom fields or external references.\n\nCall it to correct or add to an organization once you have its id. Only the arguments you\npass change; one you omit keeps its value, and a core field cannot be cleared here.\nEditing a discovered lookalike leaves it discovered: ``promote_organization`` is the\ndecision to work it. For a company you may not hold yet use\n``find_or_create_organization``; to join a duplicate, ``merge_organizations``.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -3631,30 +3583,6 @@
             ],
             "default": null,
             "description": "References this organization holds to detach, such as one\nattached to the wrong company."
-          },
-          "dossier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Replace the research dossier with this markdown; \"\" clears it. The dossier is\nfor what is read, not filtered: anything you would filter or sort on is a field."
-          },
-          "dossier_append": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Add this markdown after the current dossier, with a blank line between;\na concurrent writer's addition is kept. Refused when the dossier would pass its\nmaximum length. Not with dossier."
           }
         },
         "required": [
@@ -3668,7 +3596,7 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": false
       },
       "_meta": {
@@ -4257,6 +4185,6 @@
   ],
   "skill_sha256": {
     "skill://people-evidence/SKILL.md": "b1a1e1c1757d9c818743318b9433bf06414e14b7e677d53a9ead9c54aa8e4cd5",
-    "skill://people/SKILL.md": "59a514a65482285bea74ae0a76c89785426c5be1af47dca38273246e0c0c6eb3"
+    "skill://people/SKILL.md": "a28ec5e6ca4986cfa60a7643e2a2330baf55039f33fe68e710a71bcd99f16075"
   }
 }

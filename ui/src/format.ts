@@ -3,11 +3,11 @@ import { marked } from "marked";
 import type { BadgeTone } from "@nimblebrain/synapse/ui";
 
 /**
- * Render a dossier's markdown to sanitized HTML for `<Prose html>`.
+ * Render an interaction body's markdown to sanitized HTML.
  *
- * Dossiers carry agent web-research output derived from prospect-controlled
- * websites, so the markdown→HTML result is run through DOMPurify before it
- * reaches Prose's `dangerouslySetInnerHTML` — stripping `<script>`, inline
+ * Bodies carry agent-written text over prospect-controlled sources (an email
+ * received, a page read), so the markdown→HTML result is run through DOMPurify
+ * before it reaches `dangerouslySetInnerHTML` — stripping `<script>`, inline
  * event handlers, and other injection vectors. The host iframe's CSP allows
  * `unsafe-inline` (required by the single-file bundle), so sanitizing here is
  * the load-bearing defense, not the CSP.

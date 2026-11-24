@@ -63,7 +63,6 @@ __all__ = [
     "UTCDateTime",
     "as_real",
     "binary_collation",
-    "byte_length",
     "db_ago",
     "db_now",
     "field_boolean",
@@ -77,7 +76,6 @@ __all__ = [
     "fields_filled",
     "fields_written",
     "insert_for",
-    "joined_text",
     "serialize_on",
 ]
 
@@ -166,25 +164,6 @@ def db_ago(dialect: str, delta: timedelta) -> ColumnElement[datetime]:
 # --------------------------------------------------------------------------- #
 # Text and numbers                                                             #
 # --------------------------------------------------------------------------- #
-
-
-def joined_text(dialect: str, sep: str, head: Any, tail: Any) -> ColumnElement[str]:
-    """``head``, ``sep`` and ``tail``, or ``tail`` alone when ``head`` is NULL.
-
-    ``concat_ws`` on Postgres; SQLite added it only in 3.44, so there it is
-    ``coalesce(head || sep, '') || tail``.
-    """
-    if dialect == SQLITE:
-        return func.coalesce(head.concat(sep), "").concat(tail)
-    return func.concat_ws(sep, head, tail)
-
-
-def byte_length(dialect: str, value: Any) -> ColumnElement[int]:
-    """The UTF-8 byte length of ``value``: ``octet_length`` on Postgres, the length of the
-    text as a blob on SQLite (whose ``octet_length`` is new in 3.43)."""
-    if dialect == SQLITE:
-        return func.length(cast(value, sqlite.BLOB()))
-    return func.octet_length(value)
 
 
 def binary_collation(dialect: str) -> str:

@@ -60,7 +60,6 @@ the core's.
 | `max_interactions`, `max_signals`, `max_proof_points` | Every record ever created | `log_interaction`, `record_signal`, `record_proof_point` |
 | `max_custom_fields` | Every field definition across the three entities, retired ones included: a retired key stays taken | `define_field` |
 | `max_pipeline_stages`, `max_signal_types` | Every stage or type ever defined, the seeded ones included | `define_pipeline_stage`, `define_signal_type` |
-| `max_dossier_bytes` | One dossier, in UTF-8 bytes as it would be stored | `dossier` and `dossier_append` on the three update tools; for an append, the joined text |
 | `max_import_rows` | The rows of one call | `import_contacts`, `import_organizations` |
 
 **Only a create counts, and a reopen.** A match (by reference, key or idempotency key) is never
@@ -89,12 +88,11 @@ as the core's own cap refuses a longer one. Inside an import, a row that would c
 count is rolled back alone and reported under `skipped`, its group carrying `limit`, and the
 other rows commit: the import's per-row contract. `link_similar_organizations` skips a new
 company the same way, counts it in `skipped` and names the limit as `limit`; a company the
-workspace already holds still links. A dossier past `max_dossier_bytes` is refused before it
-is written, and the core's own cap on a dossier applies as well.
+workspace already holds still links.
 
 **A refusal** is `invalid_request` with `limit` naming the `Limits` field, so a client can tell
 it from a bad argument without a new code. Its `next_step` names what frees room (deleting
-records no longer worked, closing decided deals, shortening the dossier, splitting the import),
+records no longer worked, closing decided deals, splitting the import),
 says when nothing does, and names the local install, which has no limits. It is a denied attempt in
 `people_audit`, and the runtime records the field's event (`<field>_refused`). Limits add no
 argument and no tool, so the surface is the same under every runtime.
@@ -106,10 +104,10 @@ in the store, never a database sequence.
 
 | Table | Holds |
 |---|---|
-| `organization` | A company: name, domain, website, industry, region, firmographics, a research dossier, custom fields, a status (`active`, or `discovered` for a lookalike not yet promoted) |
-| `contact` | A person: name, email, phone, title, the organization they work at, a lifecycle stage, an email status, a dossier, custom fields |
+| `organization` | A company: name, domain, website, industry, region, firmographics, custom fields, a status (`active`, or `discovered` for a lookalike not yet promoted) |
+| `contact` | A person: name, email, phone, title, the organization they work at, a lifecycle stage, an email status, custom fields |
 | `interaction` | A touch with a contact (meeting, email, call, note, research), with its direction, optionally against a deal. It keeps the contact's organization as it was when logged |
-| `opportunity` | A deal on an organization or a contact: value, currency, stage, close time, a dossier, custom fields |
+| `opportunity` | A deal on an organization or a contact: value, currency, stage, close time, custom fields |
 | `pipeline_stage` | A workspace's stages in order, each with a default probability and an outcome (open, won, lost) |
 | `organization_edge` | The org-to-org graph; `similar_to` holds lookalikes with their similarity |
 | `signal`, `signal_type`, `signal_evidence_for` | An attested fact about an account (claim, verbatim quote, source URL, dates), the workspace's vocabulary of signal types, and whom each signal is evidence for |
@@ -118,10 +116,15 @@ in the store, never a database sequence.
 | `external_ref` | Another system's URI for a record, matched before any other key |
 | `people_audit` | The append-only change log: every write, and every denied or failed attempt |
 
+**Unread columns stay.** `organization`, `contact` and `opportunity` keep `dossier` and
+`dossier_updated_at` columns that no tool reads or writes. They stay so a database that holds
+research notes in them keeps those notes: dropping them would be a migration that destroys
+that data.
+
 **Open strings, not enums.** A contact's stage, `lead_source`, an interaction's `kind`, an
 industry and a source are plain text, so the agents writing them can extend them without a
 migration. A contact's displayed stage is a floor derived at read time from facts the CRM
-holds (a dossier, an outbound or inbound touch), never a write.
+holds (an outbound or inbound touch), never a write.
 
 **Dedupe is the core contract.** `find_or_create_*` and the imports match by external
 reference, then the normalized domain or email, then the name (and, for a contact, the
@@ -294,15 +297,13 @@ Under the MCP specification an unannotated tool is treated as destructive and op
 | Read | `get_*`, `list_*`, `count_records`, `resolve_external_refs` | yes | | yes |
 | Add, converging | `find_or_create_*`, `import_*`, `define_*`, `record_signal`, `link_similar_organizations` | no | no | yes |
 | Add | `create_opportunity`, `log_interaction`, `record_proof_point` | no | no | no |
-| Edit, with append | `update_contact`, `update_organization`, `update_opportunity` | no | yes | no |
-| Edit | `update_field`, `update_pipeline_stage`, `update_signal_type` | no | yes | yes |
+| Edit | `update_contact`, `update_organization`, `update_opportunity`, `update_field`, `update_pipeline_stage`, `update_signal_type` | no | yes | yes |
 | Move | `move_opportunity`, `promote_organization`, `update_signal`, `archive_contact`, `archive_organization` | no | no | yes |
 | Move, stamped | `verify_proof_point` | no | no | no |
 | Withdraw or delete | `withdraw_signal`, `delete_contact`, `delete_organization` | no | yes | yes |
 | Merge | `merge_contacts`, `merge_organizations` | no | yes | no |
 
-A field edit overwrites values, so it is destructive; a move another call undoes is not. A
-record update can append to the dossier on every call, so it is not idempotent;
+A field edit overwrites values, so it is destructive; a move another call undoes is not.
 `verify_proof_point` stamps the time of each call.
 
 ## Evidence

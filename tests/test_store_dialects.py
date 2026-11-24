@@ -449,7 +449,6 @@ async def test_every_returned_timestamp_is_utc_aware(ctx) -> None:
         touch = await store.log_interaction(
             conn, ctx, contact_id=person.id, kind="email", summary="s", occurred_at=when
         )
-        await store.set_contact_dossier(conn, ctx, contact_id=person.id, dossier="notes")
         fresh, _counts = await store.get_contact(conn, ctx, contact_id=person.id)
     assert touch.occurred_at == when and _is_utc(touch.occurred_at)
     assert _is_utc(touch.created_at)
@@ -457,7 +456,6 @@ async def test_every_returned_timestamp_is_utc_aware(ctx) -> None:
     for value in (
         fresh.created_at,
         fresh.updated_at,
-        fresh.dossier_updated_at,
         fresh.email_checked_at,
     ):
         assert _is_utc(value)
@@ -512,24 +510,6 @@ async def test_a_value_postgres_cannot_store_is_refused_on_both(ctx) -> None:
     assert skipped["rows"] == [1] and "NUL" in skipped["reason"]
 
 
-async def test_dossier_append_counts_bytes_not_characters(ctx, monkeypatch) -> None:
-    monkeypatch.setattr(store, "_CAP_DOSSIER", 11)
-    async with session_for(ctx) as conn:
-        person, *_ = await store.find_or_create_contact(
-            conn, ctx, name="Bytes", email="b@x.example"
-        )
-        await store.set_contact_dossier(conn, ctx, contact_id=person.id, dossier="ab")
-        await store.set_contact_dossier(conn, ctx, contact_id=person.id, dossier="cd", append=True)
-        fresh, _ = await store.get_contact(conn, ctx, contact_id=person.id)
-    assert fresh.dossier == "ab\n\ncd"
-    with pytest.raises(ValueError, match="maximum length"):
-        async with session_for(ctx) as conn:
-            # 6 + 2 + 4 = 12 bytes ("é" is two) passes 11; as 10 characters it would fit.
-            await store.set_contact_dossier(
-                conn, ctx, contact_id=person.id, dossier="éé", append=True
-            )
-
-
 def _pg(expr: Any) -> str:
     return str(expr.compile(dialect=postgresql.dialect()))
 
@@ -565,14 +545,6 @@ def test_each_postgres_form_is_the_native_construct() -> None:
         (
             dialect.fields_filled("postgresql", fields, patch),
             cast(literal(patch, JSONB), JSONB).op("||")(fields),
-        ),
-        (
-            dialect.joined_text("postgresql", "\n\n", contact.c.dossier, "x"),
-            func.concat_ws("\n\n", contact.c.dossier, "x"),
-        ),
-        (
-            dialect.byte_length("postgresql", contact.c.dossier),
-            func.octet_length(contact.c.dossier),
         ),
         (dialect.db_now("postgresql"), func.now()),
         (

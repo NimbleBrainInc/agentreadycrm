@@ -85,7 +85,6 @@ async def _seed(client: Client) -> dict[str, Any]:
         )
     )["contact"]["id"]
     await _call(client, "update_contact", contact_id=jane, fields={"nickname": "canary-nick"})
-    await _call(client, "update_contact", contact_id=jane, dossier="Canary likes tea.")
     deal = (
         await _call(
             client,

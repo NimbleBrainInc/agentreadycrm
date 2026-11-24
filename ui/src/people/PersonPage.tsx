@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useApp } from "@nimblebrain/synapse/react";
 import {
   Avatar,
@@ -13,10 +13,10 @@ import {
   useBreakpoint,
 } from "@nimblebrain/synapse/ui";
 import { readAll, useCall } from "../api";
-import { DossierForm, EditContactForm, LogInteractionForm, MergeContactForm } from "../components/forms";
-import { Dossier, OverflowMenu } from "../components/kit";
+import { EditContactForm, LogInteractionForm, MergeContactForm } from "../components/forms";
+import { OverflowMenu } from "../components/kit";
 import { OpenDeals } from "../components/OpenDeals";
-import { fmtDate, markdownToHtml, statusTone } from "../format";
+import { fmtDate, markdownToHtml } from "../format";
 import {
   type ApiError,
   type Contact,
@@ -35,7 +35,7 @@ import {
 import { EmailValue } from "./cells";
 import { CustomFields, FieldLine, HISTORY, RecordLayout, RecordTimeline, Section, show, type TimelineEvent } from "./pagekit";
 
-type Modal = null | "edit" | "log" | "dossier" | "merge";
+type Modal = null | "edit" | "log" | "merge";
 
 // The lanes a person's timeline filters by, besides Activity and History.
 const LANES = ["Emails", "Signals"];
@@ -140,7 +140,7 @@ export function buildTimeline(loaded: Loaded): TimelineEvent[] {
 
 /**
  * One person: everything known about them as cards on the left — about, their
- * company, signals, custom fields, notes — and their history on the right.
+ * company, signals, custom fields — and their history on the right.
  */
 export function PersonPage({
   contactId,
@@ -150,6 +150,7 @@ export function PersonPage({
   onLoaded,
   onOpenOrganization,
   onOpenDeal,
+  openInApp,
   refreshKey = 0,
 }: {
   contactId: string;
@@ -163,6 +164,8 @@ export function PersonPage({
   onOpenOrganization: (id: string) => void;
   /** Open one of the person's deals, in place. */
   onOpenDeal: (id: string) => void;
+  /** The control that opens this person in the app's own page, where the host offers one. */
+  openInApp?: ReactNode;
   /** A change re-reads the person in place, keeping any form open on the page. */
   refreshKey?: number;
 }) {
@@ -244,6 +247,7 @@ export function PersonPage({
       onBack={onBack}
       onOpenOrganization={onOpenOrganization}
       onOpenDeal={onOpenDeal}
+      openInApp={openInApp}
     />
   );
 }
@@ -255,6 +259,7 @@ function PersonView({
   onBack,
   onOpenOrganization,
   onOpenDeal,
+  openInApp,
 }: {
   loaded: Loaded;
   backLabel: string;
@@ -262,6 +267,7 @@ function PersonView({
   onBack: () => void;
   onOpenOrganization: (id: string) => void;
   onOpenDeal: (id: string) => void;
+  openInApp?: ReactNode;
 }) {
   const app = useApp();
   // The pane's own width decides the layout: the host may give this app a narrow split.
@@ -297,12 +303,7 @@ function PersonView({
               {c.name}
             </span>
           }
-          status={
-            <>
-              <Badge tone={statusTone(c.effective_status)}>{c.effective_status}</Badge>
-              {c.archived_at ? <Badge tone="neutral">archived</Badge> : null}
-            </>
-          }
+          status={c.archived_at ? <Badge tone="neutral">archived</Badge> : undefined}
           description={
             <>
               {c.title ?? ""}
@@ -312,11 +313,9 @@ function PersonView({
           }
           actions={
             <Inline gap="0.5rem">
+              {openInApp}
               <Button variant="secondary" size="sm" onClick={() => setModal("log")}>
                 Log interaction
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setModal("dossier")}>
-                Notes
               </Button>
               <OverflowMenu
                 label="More actions"
@@ -400,11 +399,12 @@ function PersonView({
             </Section>
 
             <Section title="Fields" count={(loaded.defs.contact ?? []).filter((d) => c.fields?.[d.key] !== undefined).length}>
-              <CustomFields defs={loaded.defs.contact ?? []} values={c.fields} details={c.field_details} />
-            </Section>
-
-            <Section title="Notes" action={<TextLink style={{ fontSize: tokens.textXsSize }} onClick={() => setModal("dossier")}>Edit</TextLink>}>
-              <Dossier markdown={c.dossier} />
+              <CustomFields
+                defs={loaded.defs.contact ?? []}
+                values={c.fields}
+                details={c.field_details}
+                edit={{ kind: "contact", id: c.id }}
+              />
             </Section>
           </>
         }
@@ -413,7 +413,6 @@ function PersonView({
 
       {modal === "edit" ? <EditContactForm contact={c} onClose={() => setModal(null)} /> : null}
       {modal === "log" ? <LogInteractionForm contactId={c.id} onClose={() => setModal(null)} /> : null}
-      {modal === "dossier" ? <DossierForm kind="contact" id={c.id} current={c.dossier} onClose={() => setModal(null)} /> : null}
       {modal === "merge" ? <MergeContactForm target={c} onClose={() => setModal(null)} /> : null}
     </div>
   );

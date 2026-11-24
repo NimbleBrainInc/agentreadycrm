@@ -89,10 +89,6 @@ class Organization(BaseModel):
     headquarters: str | None = Field(
         default=None, description="HQ location (finer than the coarser region)."
     )
-    dossier: str | None = Field(default=None, description="Markdown research store.")
-    dossier_updated_at: datetime | None = Field(
-        default=None, description="ISO-8601 staleness signal for the dossier."
-    )
     source: str | None = Field(
         default=None,
         description="Provenance: research / manual / import / similar_companies / bundle id.",
@@ -149,8 +145,6 @@ class Organization(BaseModel):
             employee_range=_get(row, "employee_range"),
             revenue_range=_get(row, "revenue_range"),
             headquarters=_get(row, "headquarters"),
-            dossier=_get(row, "dossier"),
-            dossier_updated_at=_get(row, "dossier_updated_at"),
             source=_get(row, "source"),
             status=_get(row, "status"),
             archived_at=_get(row, "archived_at"),
@@ -194,8 +188,6 @@ class Contact(BaseModel):
     organization_id: str | None = Field(
         default=None, description="FK → Organization (the works_at edge); opaque id."
     )
-    dossier: str | None = Field(default=None, description="Markdown research store.")
-    dossier_updated_at: datetime | None = None
     lead_source: str | None = Field(
         default=None,
         description="Open string: referral / inbound / outbound / event / import / research / other / …",
@@ -213,8 +205,9 @@ class Contact(BaseModel):
     )
     effective_status: str = Field(
         description=(
-            "Read-only floor projection of status: a dossier'd "
-            "contact reads at least enriched even if status was never advanced. "
+            "Read-only floor projection of status: a contact with an outbound touch "
+            "reads at least contacted, one with an inbound touch at least engaged, even if "
+            "status was never advanced. "
             "Derived from stored facts; People never writes it. Use this for "
             "display and worklist filters; status stays the engine's raw value."
         )
@@ -260,8 +253,6 @@ class Contact(BaseModel):
             phone=_get(row, "phone"),
             title=_get(row, "title"),
             organization_id=_get(row, "organization_id"),
-            dossier=_get(row, "dossier"),
-            dossier_updated_at=_get(row, "dossier_updated_at"),
             lead_source=_get(row, "lead_source"),
             status=_get(row, "status"),
             # Derived in SQL; every contact SELECT carries the column.
@@ -432,8 +423,6 @@ class Opportunity(BaseModel):
     closed_at: datetime | None = Field(
         default=None, description="Set when the opportunity entered a terminal (won/lost) stage."
     )
-    dossier: str | None = Field(default=None, description="Markdown research store.")
-    dossier_updated_at: datetime | None = None
     source: str | None = Field(default=None, description="Provenance.")
     created_at: datetime
     updated_at: datetime
@@ -473,8 +462,6 @@ class Opportunity(BaseModel):
             field_details=(field_details(stored, retired=retired) or None) if details else None,
             close_date=_get(row, "close_date"),
             closed_at=_get(row, "closed_at"),
-            dossier=_get(row, "dossier"),
-            dossier_updated_at=_get(row, "dossier_updated_at"),
             source=_get(row, "source"),
             created_at=_get(row, "created_at"),
             updated_at=_get(row, "updated_at"),
@@ -565,8 +552,7 @@ class SignalType(BaseModel):
 class Signal(BaseModel):
     """A Signal wire contract (``sg_<ulid>``).
 
-    A dated, URL-attested fact about an account. The evidence row beneath the
-    dossier's prose: ``claim`` is the fact in one sentence, ``evidence_quote`` +
+    A dated, URL-attested fact about an account: ``claim`` is the fact in one sentence, ``evidence_quote`` +
     ``source_url`` are what a reviewer checks it against.
     """
 
