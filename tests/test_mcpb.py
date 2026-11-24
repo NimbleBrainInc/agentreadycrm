@@ -77,7 +77,7 @@ async def test_the_bundle_publishes_exactly_the_registered_tools() -> None:
 
 def test_the_bundle_places_nothing_in_a_nimblebrain_host() -> None:
     assert "ai.nimblebrain/host" not in json.dumps(MANIFEST)
-    assert set(MANIFEST["_meta"]) == {"org.mpaktrust"}
+    assert "_meta" not in MANIFEST
 
 
 async def test_the_server_reports_the_package_version() -> None:
