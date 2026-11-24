@@ -61,7 +61,6 @@ from nimblebrain_server_sdk import (
     add_server_card,
     add_skills,
     announce_resource_list_changed,
-    listing_row,
 )
 from nimblebrain_server_sdk.errors import (
     ErrorCode,
@@ -197,11 +196,10 @@ join two records of one person or company use merge_*, after the user confirms. 
 no natural key: check list_opportunities(organization_id=..., query=...) before \
 create_opportunity.
 
-Field or dossier. Anything you would filter, sort or count by is a field: list_fields lists \
-them, define_field adds one, and update_*(fields={key: value}) writes it. What is only read \
-is the dossier: update_*(dossier_append=...). A fact about a company goes on the \
-organization, never on each of its contacts. A fact you would cite is a signal \
-(record_signal) or a proof point (record_proof_point), not dossier prose.
+Facts go in fields. Anything you would filter, sort or count by is a field: list_fields lists \
+them, define_field adds one, and update_*(fields={key: value}) writes it. A fact about a \
+company goes on the organization, never on each of its contacts. A fact you would cite is a \
+signal (record_signal) or a proof point (record_proof_point).
 
 Query, don't walk. list_contacts, list_organizations and list_opportunities take a free-text \
 query, a filter, a sort and columns, a page at a time; count_records says how a workspace \
@@ -379,11 +377,7 @@ ADD_CONVERGING = ToolAnnotations(
 ADD = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
-#: A record edit that overwrites values, and whose dossier_append adds text on each call.
-EDIT_APPEND = ToolAnnotations(
-    read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=False
-)
-#: A vocabulary edit that overwrites values; setting the same values twice equals once.
+#: An edit that overwrites values: setting the same values twice equals once.
 EDIT = ToolAnnotations(
     read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False
 )
@@ -697,19 +691,6 @@ def _record_limited(skipped: list[dict[str, Any]]) -> None:
     for group in skipped:
         if "limit" in group:
             runtime().record(PeopleEvent(f"{group['limit']}_refused"), len(group["rows"]))
-
-
-def _dossier_write(dossier: str | None, dossier_append: str | None) -> tuple[str, bool] | None:
-    """The dossier write an update asks for, as ``(text, append)``, or None for none."""
-    if dossier is not None and dossier_append is not None:
-        raise ValueError(
-            "pass dossier to replace the dossier or dossier_append to add to it, not both"
-        )
-    if dossier is not None:
-        return dossier, False
-    if dossier_append is not None:
-        return dossier_append, True
-    return None
 
 
 #: How many of a record's newest interactions its ``get_*`` read carries.
@@ -1050,7 +1031,7 @@ async def find_or_create_organization(
         runtime().record(PeopleEvent.ORGANIZATION_CREATED)
     next_step = (
         f"Add contacts with find_or_create_contact(organization_id={org.id!r}), "
-        f"or add research with update_organization(organization_id={org.id!r}, dossier_append=...)."
+        f"or set its fields with update_organization(organization_id={org.id!r}, fields=...)."
     )
     result: dict[str, Any] = {"organization": dump(org), "action": action, "next_step": next_step}
     if promoted:
@@ -1143,7 +1124,7 @@ async def find_or_create_contact(
         runtime().record(PeopleEvent.CONTACT_CREATED)
     next_step = (
         f"Log an interaction with log_interaction(contact_id={contact.id!r}, ...), "
-        f"or add research with update_contact(contact_id={contact.id!r}, dossier_append=...)."
+        f"or set their fields with update_contact(contact_id={contact.id!r}, fields=...)."
     )
     if action == "created" and not (name and name.strip()):
         next_step += (
@@ -1306,7 +1287,7 @@ async def import_contacts(
     return {**result, "next_step": _import_next_step(result, "contacts", "list_contacts")}
 
 
-@mcp.tool(annotations=EDIT_APPEND, meta=CHATGPT_TOOL_META)
+@mcp.tool(annotations=EDIT, meta=CHATGPT_TOOL_META)
 async def update_contact(
     contact_id: str,
     name: str | None = None,
@@ -1323,11 +1304,9 @@ async def update_contact(
     fields_by: str | None = None,
     add_external_refs: list[str] | None = None,
     remove_external_refs: list[str] | None = None,
-    dossier: str | None = None,
-    dossier_append: str | None = None,
     ctx: Context | None = None,
 ) -> dict:
-    """Change a contact you hold: their fields, custom fields, external references or research dossier.
+    """Change a contact you hold: their fields, custom fields or external references.
 
     Call it to correct or add to a contact once you have their id. Only the arguments you
     pass change; one you omit keeps its value, and a core field cannot be cleared here. To
@@ -1358,18 +1337,12 @@ async def update_contact(
             refused as a conflict, never moved.
         remove_external_refs: References this contact holds to detach, such as one attached to
             the wrong person.
-        dossier: Replace the research dossier with this markdown; "" clears it. The dossier is
-            for what is read, not filtered: anything you would filter or sort on is a field.
-        dossier_append: Add this markdown after the current dossier, with a blank line between;
-            a concurrent writer's addition is kept. Refused when the dossier would pass its
-            maximum length. Not with dossier.
 
     Returns:
         {contact, next_step}.
     """
     sctx = runtime().identity()
     try:
-        written = _dossier_write(dossier, dossier_append)
         async with runtime().session(sctx) as conn:
             contact = await store.update_contact(
                 conn,
@@ -1390,15 +1363,6 @@ async def update_contact(
                 add_external_refs=add_external_refs,
                 remove_external_refs=remove_external_refs,
             )
-            if written is not None:
-                contact, _previous = await store.set_contact_dossier(
-                    conn,
-                    sctx,
-                    contact_id=contact_id,
-                    dossier=written[0],
-                    append=written[1],
-                    limits=runtime().limits(sctx),
-                )
     except (
         ContactNotFoundError,
         OrganizationNotFoundError,
@@ -1711,7 +1675,7 @@ async def delete_organization(
     }
 
 
-@mcp.tool(annotations=EDIT_APPEND, meta=CHATGPT_TOOL_META)
+@mcp.tool(annotations=EDIT, meta=CHATGPT_TOOL_META)
 async def update_organization(
     organization_id: str,
     name: str | None = None,
@@ -1724,11 +1688,9 @@ async def update_organization(
     fields_by: str | None = None,
     add_external_refs: list[str] | None = None,
     remove_external_refs: list[str] | None = None,
-    dossier: str | None = None,
-    dossier_append: str | None = None,
     ctx: Context | None = None,
 ) -> dict:
-    """Change an organization you hold: its fields, custom fields, external references or research dossier.
+    """Change an organization you hold: its fields, custom fields or external references.
 
     Call it to correct or add to an organization once you have its id. Only the arguments you
     pass change; one you omit keeps its value, and a core field cannot be cleared here.
@@ -1752,18 +1714,12 @@ async def update_organization(
             refused as a conflict, never moved.
         remove_external_refs: References this organization holds to detach, such as one
             attached to the wrong company.
-        dossier: Replace the research dossier with this markdown; "" clears it. The dossier is
-            for what is read, not filtered: anything you would filter or sort on is a field.
-        dossier_append: Add this markdown after the current dossier, with a blank line between;
-            a concurrent writer's addition is kept. Refused when the dossier would pass its
-            maximum length. Not with dossier.
 
     Returns:
         {organization, next_step}.
     """
     sctx = runtime().identity()
     try:
-        written = _dossier_write(dossier, dossier_append)
         async with runtime().session(sctx) as conn:
             org = await store.update_organization(
                 conn,
@@ -1780,15 +1736,6 @@ async def update_organization(
                 add_external_refs=add_external_refs,
                 remove_external_refs=remove_external_refs,
             )
-            if written is not None:
-                org, _previous = await store.set_organization_dossier(
-                    conn,
-                    sctx,
-                    org_id=organization_id,
-                    dossier=written[0],
-                    append=written[1],
-                    limits=runtime().limits(sctx),
-                )
     except (OrganizationNotFoundError, ConflictError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="organization", action="update", exc=exc)
     except Exception as exc:  # noqa: BLE001 - final safety net; never a raw 500
@@ -1823,7 +1770,8 @@ async def log_interaction(
     organization the contact works at now, and under a deal when you give ``opportunity_id``.
     Give a direction on an email, call or meeting so the contact's stage advances (outbound to
     contacted, inbound to engaged). For lasting research about a person or company rather
-    than one event, write the dossier with ``update_contact`` or ``update_organization``.
+    than one event, set a field with ``update_contact`` or ``update_organization``, or record a
+    signal.
 
     Args:
         contact_id: The contact it was with.
@@ -2222,11 +2170,11 @@ async def list_fields(
     """List the fields of contacts, organizations and deals: the core ones and this workspace's custom ones.
 
     Read it before writing ``fields={...}``, filtering, sorting or counting, to learn which
-    keys exist, their types and options, and what each one means. Every key it lists but
-    dossier is a path the list tools and count_records take, and a contact also reaches its
+    keys exist, their types and options, and what each one means. Every key it lists is a
+    path the list tools and count_records take, and a contact also reaches its
     organization's as ``organization.<key>``. When the field you need is missing and you
     cannot add it with ``define_field``, tell the user which field is missing rather than
-    storing the value in a dossier or another field.
+    storing the value in another field.
 
     Args:
         entity: Only this entity's fields. Omit for all three.
@@ -2274,7 +2222,7 @@ async def list_fields(
 
 @mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("contacts"))
 async def get_contact(contact_id: str, ctx: Context | None = None) -> dict:
-    """Read one contact in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.
+    """Read one contact in full: fields, counts, external references, the 5 newest interactions and open deals.
 
     Call it when you hold a contact's id and need what is known about them before you act:
     before writing to them, before a call, or to answer a question about them. The 5 newest
@@ -2362,7 +2310,7 @@ async def resolve_external_refs(refs: list[str], ctx: Context | None = None) -> 
 
 @mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("organizations"))
 async def get_organization(organization_id: str, ctx: Context | None = None) -> dict:
-    """Read one organization in full: fields, dossier, counts, external references, the 5 newest interactions and open deals.
+    """Read one organization in full: fields, counts, external references, the 5 newest interactions and open deals.
 
     Call it when you hold an organization's id and need what is known about the company
     before you act or answer. The 5 newest interactions, with anyone there, come without
@@ -2437,12 +2385,7 @@ def _with_uri(row: dict[str, Any]) -> dict[str, Any]:
 
 def _page_result(key: str, tool: str, page: store.Page, *, open_with: str) -> dict[str, Any]:
     """The wire shape of one listing page. ``total`` is on the first page only."""
-    # A dossier is unbounded research markdown, so a row omits it; ``dossier_updated_at``
-    # still says one exists, and the record's ``get_*`` tool reads it.
-    rows = [
-        _with_uri(row) if isinstance(row, dict) else listing_row(dump(row), omit=("dossier",))
-        for row in page.rows
-    ]
+    rows = [_with_uri(row) if isinstance(row, dict) else dump(row) for row in page.rows]
     if page.next_cursor is not None:
         next_step = (
             f"Fetch the next page with {tool}(cursor={page.next_cursor!r}, ...) and the "
@@ -2450,7 +2393,7 @@ def _page_result(key: str, tool: str, page: store.Page, *, open_with: str) -> di
         )
     else:
         next_step = (
-            f"This is the last page. Read one in full, dossier included, with {open_with}; "
+            f"This is the last page. Read one in full with {open_with}; "
             "its uri is the record's address for citing it or opening it in a view."
         )
     result: dict[str, Any] = {key: rows, "next_cursor": page.next_cursor, "next_step": next_step}
@@ -2500,7 +2443,7 @@ async def list_contacts(
         sort: A field path to order by, "-" first for descending (e.g. "-created_at"). Rows
             with no value sort last. Default: newest first.
         columns: Return only these paths per row (plus id and uri), e.g. ["name", "title"].
-            Without it each row is the whole contact but its dossier.
+            Without it each row is the whole contact.
         limit: Page size (default 50, at most 200).
         cursor: The next_cursor of the previous page. Pass the same query, filter, sort and
             columns with it.
@@ -2575,7 +2518,7 @@ async def list_organizations(
         sort: A field path to order by, "-" first for descending (e.g. "-created_at"). Rows
             with no value sort last. Default: newest first.
         columns: Return only these paths per row (plus id and uri), e.g. ["name", "fit"].
-            Without it each row is the whole organization but its dossier.
+            Without it each row is the whole organization.
         limit: Page size (default 50, at most 200).
         cursor: The next_cursor of the previous page. Pass the same query, filter, sort and
             columns with it.
@@ -2993,7 +2936,7 @@ async def create_opportunity(
     }
 
 
-@mcp.tool(annotations=EDIT_APPEND, meta=CHATGPT_TOOL_META)
+@mcp.tool(annotations=EDIT, meta=CHATGPT_TOOL_META)
 async def update_opportunity(
     opportunity_id: str,
     title: str | None = None,
@@ -3005,11 +2948,9 @@ async def update_opportunity(
     source: str | None = None,
     fields: dict[str, Any] | None = None,
     fields_by: str | None = None,
-    dossier: str | None = None,
-    dossier_append: str | None = None,
     ctx: Context | None = None,
 ) -> dict:
-    """Change a deal you hold: its title, value, probability, close date, primary contact, custom fields or research dossier.
+    """Change a deal you hold: its title, value, probability, close date, primary contact or custom fields.
 
     Call it to correct or add to a deal once you have its id. Only the arguments you pass
     change; one you omit keeps its value, and a core field cannot be cleared here. It never
@@ -3029,18 +2970,12 @@ async def update_opportunity(
             for a text field) removes it; keys not given are kept. To keep the reason with a
             value, pass {"value": ..., "why": "..."}. Keys must be defined (list_fields).
         fields_by: Who is setting these fields, when the values do not say.
-        dossier: Replace the research dossier with this markdown; "" clears it. The dossier is
-            for what is read, not filtered: anything you would filter or sort on is a field.
-        dossier_append: Add this markdown after the current dossier, with a blank line between;
-            a concurrent writer's addition is kept. Refused when the dossier would pass its
-            maximum length. Not with dossier.
 
     Returns:
         {opportunity, next_step}.
     """
     sctx = runtime().identity()
     try:
-        written = _dossier_write(dossier, dossier_append)
         async with runtime().session(sctx) as conn:
             opp = await store.update_opportunity(
                 conn,
@@ -3056,15 +2991,6 @@ async def update_opportunity(
                 fields=fields,
                 fields_by=fields_by,
             )
-            if written is not None:
-                opp, _previous = await store.set_opportunity_dossier(
-                    conn,
-                    sctx,
-                    opportunity_id=opportunity_id,
-                    dossier=written[0],
-                    append=written[1],
-                    limits=runtime().limits(sctx),
-                )
     except (OpportunityNotFoundError, ContactNotFoundError, ValueError, TypeError) as exc:
         return await _handle_tool_error(sctx, entity="opportunity", action="update", exc=exc)
     except Exception as exc:  # noqa: BLE001 - final safety net; never a raw 500
@@ -3132,7 +3058,7 @@ async def move_opportunity(
 
 @mcp.tool(annotations=READ, meta=CHATGPT_TOOL_META, app=_bound_to("opportunities"))
 async def get_opportunity(opportunity_id: str, ctx: Context | None = None) -> dict:
-    """Read one deal in full: fields, dossier, counts and the 5 newest interactions logged against it.
+    """Read one deal in full: fields, counts and the 5 newest interactions logged against it.
 
     Call it when you hold a deal's id and need where it stands before you act or answer. The
     5 newest interactions come without their bodies; ``list_interactions(opportunity_id=...)``
@@ -3208,8 +3134,7 @@ async def list_opportunities(
         sort: A field path to order by, "-" first for descending (e.g. "-weighted_value",
             "close_date"). Rows with no value sort last. Default: newest first.
         columns: Return only these paths per row (plus id and uri), e.g. ["title", "stage",
-            "value", "organization.name"]. Without it each row is the whole deal but its
-            dossier.
+            "value", "organization.name"]. Without it each row is the whole deal.
         limit: Page size (default 50, at most 200).
         cursor: The next_cursor of the previous page. Pass the same query, filter, sort and
             columns with it.
@@ -3418,9 +3343,9 @@ async def record_signal(
     citing it could check: the ``claim`` is your sentence, the ``evidence_quote`` is theirs,
     verbatim, and the ``source_url`` is where a reviewer opens it. Finding nothing worth
     recording is a good outcome: record no signal rather than a weak one. For a claim about
-    our own work use ``record_proof_point``; for research prose, the dossier. Recording the
-    same source and type for the account again returns the signal already held; if that key
-    holds a different fact, yours is not stored and next_step says so.
+    our own work use ``record_proof_point``. Recording the same source and type for the
+    account again returns the signal already held; if that key holds a different fact, yours
+    is not stored and next_step says so.
 
     Args:
         organization_id: The account the fact is about.

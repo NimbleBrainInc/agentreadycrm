@@ -11,8 +11,6 @@ export interface Organization {
   employee_range: string | null;
   revenue_range: string | null;
   headquarters: string | null;
-  dossier: string | null;
-  dossier_updated_at: string | null;
   source: string | null;
   status: string;
   fields?: Record<string, unknown>;
@@ -37,8 +35,6 @@ export interface Contact {
   phone: string | null;
   title: string | null;
   organization_id: string | null;
-  dossier: string | null;
-  dossier_updated_at: string | null;
   lead_source: string | null;
   status: string;
   effective_status: string;
@@ -113,8 +109,6 @@ export interface Opportunity {
   weighted_value: number | null;
   close_date: string | null;
   closed_at: string | null;
-  dossier: string | null;
-  dossier_updated_at: string | null;
   source: string | null;
   fields?: Record<string, unknown> | null;
   field_details?: Record<string, FieldDetails> | null;

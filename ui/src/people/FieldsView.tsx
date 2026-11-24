@@ -97,9 +97,14 @@ const selectStyle = {
   padding: "0.45rem 0.6rem",
 };
 
-function NewFieldForm({ onClose }: { onClose: () => void }) {
+/**
+ * Define a custom field. Given an `entity`, the field is that record kind's and the form does
+ * not ask. A refusal (an account at its field limit, a viewer the host keeps from defining
+ * fields) shows as the server or host words it.
+ */
+export function NewFieldForm({ entity: fixedEntity, onClose }: { entity?: string; onClose: () => void }) {
   const call = useCall();
-  const [entity, setEntity] = useState("organization");
+  const [entity, setEntity] = useState(fixedEntity ?? "organization");
   const [label, setLabel] = useState("");
   const [type, setType] = useState<string>("select");
   const [options, setOptions] = useState("");
@@ -125,20 +130,25 @@ function NewFieldForm({ onClose }: { onClose: () => void }) {
     if (low === "invalid" || high === "invalid") return setError("Minimum and maximum must be numbers.");
     setBusy(true);
     setError(null);
-    const res = await call<DefineFieldResult | ApiError>("define_field", {
-      minimum: low,
-      maximum: high,
-      entity,
-      key,
-      label: label.trim(),
-      type,
-      options: takesOptions ? options.split(",").map((o) => o.trim()).filter(Boolean) : undefined,
-      description: description.trim() || undefined,
-      defined_by: "a person, in the People app",
-    });
-    setBusy(false);
-    if (isApiError(res)) return setError(res.message ?? res.error);
-    onClose();
+    try {
+      const res = await call<DefineFieldResult | ApiError>("define_field", {
+        minimum: low,
+        maximum: high,
+        entity,
+        key,
+        label: label.trim(),
+        type,
+        options: takesOptions ? options.split(",").map((o) => o.trim()).filter(Boolean) : undefined,
+        description: description.trim() || undefined,
+        defined_by: "a person, in the People app",
+      });
+      if (isApiError(res)) return setError(res.message ?? res.error);
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -156,16 +166,18 @@ function NewFieldForm({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-        <Text size="xs" tone="muted" weight="medium">
-          Describes
-        </Text>
-        <select id="new-field-entity" value={entity} onChange={(e) => setEntity(e.target.value)} style={selectStyle}>
-          <option value="organization">A company</option>
-          <option value="contact">A person</option>
-          <option value="opportunity">A deal</option>
-        </select>
-      </label>
+      {fixedEntity ? null : (
+        <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+          <Text size="xs" tone="muted" weight="medium">
+            Describes
+          </Text>
+          <select id="new-field-entity" value={entity} onChange={(e) => setEntity(e.target.value)} style={selectStyle}>
+            <option value="organization">A company</option>
+            <option value="contact">A person</option>
+            <option value="opportunity">A deal</option>
+          </select>
+        </label>
+      )}
       <Field label="Label" value={label} onChange={setLabel} placeholder="e.g. Funding stage" required autoFocus />
       {key ? (
         <Text size="xs" tone="faint" mono>

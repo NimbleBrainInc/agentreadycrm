@@ -1,9 +1,9 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import { Badge, Button, Heading, Inline, Prose, Stack, Text, tokens } from "@nimblebrain/synapse/ui";
+import { Badge, Button, Heading, Inline, Stack, Text, tokens } from "@nimblebrain/synapse/ui";
 import type { Interaction } from "../types";
-import { fmtDateTime, markdownToHtml } from "../format";
+import { fmtDateTime } from "../format";
 
-const inputStyle: CSSProperties = {
+export const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
   fontFamily: tokens.fontSans,
@@ -181,18 +181,6 @@ export function Timeline({ interactions }: { interactions: Interaction[] }) {
       ))}
     </Stack>
   );
-}
-
-/** Render a research dossier (markdown), or a muted placeholder. */
-export function Dossier({ markdown }: { markdown: string | null }) {
-  if (!markdown) {
-    return (
-      <Text size="sm" tone="faint">
-        No dossier yet.
-      </Text>
-    );
-  }
-  return <Prose html={markdownToHtml(markdown)} />;
 }
 
 /** One entry of an {@link OverflowMenu}. */

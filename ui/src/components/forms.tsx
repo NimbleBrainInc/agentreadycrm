@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 import { Button, Stack, Text, tokens } from "@nimblebrain/synapse/ui";
 import { useCall } from "../api";
-import { isApiError, type Contact, type Opportunity, type Organization } from "../types";
-import { Field, Modal } from "./kit";
+import { isApiError, type Contact, type FieldDef, type Opportunity, type Organization } from "../types";
+import { Field, inputStyle, Modal } from "./kit";
 
 type Done = () => void;
 
@@ -409,44 +409,159 @@ export function EditOpportunityForm({ opportunity, onClose }: { opportunity: Opp
 }
 
 // --------------------------------------------------------------------------- //
-// Dossier                                                                       //
+// Custom field values                                                          //
 // --------------------------------------------------------------------------- //
 
-export function DossierForm({
+/** The record kinds that hold custom fields, each written by its own `update_<kind>`. */
+export type RecordKind = "contact" | "organization" | "opportunity";
+
+/** Who a value set here is attributed to, as the record's field history shows it. */
+export const SET_IN_APP = "a person, in the People app";
+
+/** A value as the form edits it: the chosen options of a multi-select, text for every other type. */
+type Draft = string | string[];
+
+function draftOf(def: FieldDef, value: unknown): Draft {
+  if (def.type === "multi_select") return Array.isArray(value) ? value.map(String) : [];
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
+/**
+ * The draft as `update_<kind>(fields=...)` takes it, where null removes the value. The server
+ * checks the value against the field's type, options and range, and its refusal is shown as
+ * it words it; only a number that is not one is refused here, since it cannot be sent as one.
+ */
+export function fieldValue(def: FieldDef, draft: Draft): { value: unknown } | { invalid: string } {
+  if (Array.isArray(draft)) return { value: draft.length ? draft : null };
+  const text = draft.trim();
+  if (!text) return { value: null };
+  switch (def.type) {
+    case "number": {
+      const n = Number(text);
+      return Number.isFinite(n) ? { value: n } : { invalid: `${def.label} takes a number.` };
+    }
+    case "boolean":
+      return { value: text === "true" };
+    case "list": {
+      const items = text.split(",").map((item) => item.trim()).filter(Boolean);
+      return { value: items.length ? items : null };
+    }
+    default:
+      return { value: text };
+  }
+}
+
+function FieldInput({ def, draft, onChange }: { def: FieldDef; draft: Draft; onChange: (draft: Draft) => void }) {
+  const options = def.options ?? [];
+  if (def.type === "multi_select") {
+    const chosen = Array.isArray(draft) ? draft : [];
+    // A value the field no longer offers stays listed, so saving does not drop it unseen.
+    const shown = [...options, ...chosen.filter((o) => !options.includes(o))];
+    return (
+      <fieldset aria-label={def.label} style={{ border: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: "0.3rem 0.8rem" }}>
+        {shown.map((option) => (
+          <label key={option} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+            <input
+              type="checkbox"
+              checked={chosen.includes(option)}
+              onChange={(e) => onChange(e.target.checked ? [...chosen, option] : chosen.filter((o) => o !== option))}
+            />
+            <Text size="sm">{option}</Text>
+          </label>
+        ))}
+      </fieldset>
+    );
+  }
+  const text = Array.isArray(draft) ? "" : draft;
+  if (def.type === "select" || def.type === "boolean") {
+    const choices: [string, string][] =
+      def.type === "boolean"
+        ? [["true", "Yes"], ["false", "No"]]
+        : [...options, ...(text && !options.includes(text) ? [text] : [])].map((o) => [o, o]);
+    return (
+      // biome-ignore lint: autoFocus puts the reader in the field they asked to edit.
+      <select aria-label={def.label} value={text} onChange={(e) => onChange(e.target.value)} autoFocus style={inputStyle}>
+        <option value="">–</option>
+        {choices.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  return (
+    <input
+      aria-label={def.label}
+      type={def.type === "number" ? "number" : def.type === "date" ? "date" : "text"}
+      step={def.type === "number" ? "any" : undefined}
+      min={def.minimum ?? undefined}
+      max={def.maximum ?? undefined}
+      placeholder={def.type === "list" ? "Separate items with commas" : undefined}
+      value={text}
+      onChange={(e) => onChange(e.target.value)}
+      // biome-ignore lint: autoFocus puts the reader in the field they asked to edit.
+      autoFocus
+      style={inputStyle}
+    />
+  );
+}
+
+/**
+ * Set or clear one custom field on a record, in place in its Fields card. An empty value
+ * clears it. Saving closes the form; the write's announcement re-reads the record.
+ */
+export function FieldValueForm({
   kind,
   id,
-  current,
+  def,
+  value,
   onClose,
 }: {
-  kind: "contact" | "organization" | "opportunity";
+  kind: RecordKind;
   id: string;
-  current: string | null;
+  def: FieldDef;
+  value: unknown;
   onClose: Done;
 }) {
   const { run, busy, error } = useToolForm(onClose);
-  const [dossier, setDossier] = useState(current ?? "");
+  const [draft, setDraft] = useState<Draft>(() => draftOf(def, value));
+  const [invalid, setInvalid] = useState<string | null>(null);
 
   const submit = () => {
-    const tool = `update_${kind}`;
-    const idKey = `${kind}_id`;
-    // Empty string is a valid value here — it clears the dossier.
-    run(tool, { [idKey]: id, dossier });
+    const parsed = fieldValue(def, draft);
+    if ("invalid" in parsed) return setInvalid(parsed.invalid);
+    setInvalid(null);
+    run(`update_${kind}`, { [`${kind}_id`]: id, fields: { [def.key]: parsed.value }, fields_by: SET_IN_APP });
   };
 
   return (
-    <Modal
-      title="Edit dossier"
-      onClose={onClose}
-      footer={<SubmitFooter busy={busy} label="Save dossier" onSubmit={submit} onClose={onClose} />}
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+      style={{ display: "flex", flexDirection: "column", gap: "0.4rem", padding: "0.3rem 0 0.5rem" }}
     >
-      <Stack gap="0.75rem">
-        <ErrorText error={error} />
-        <Text size="xs" tone="faint">
-          Markdown research notes. An empty dossier clears it.
-        </Text>
-        <Field label="Dossier" value={dossier} onChange={setDossier} textarea rows={10} autoFocus />
-      </Stack>
-    </Modal>
+      <Text size="xs" tone="muted" weight="medium">
+        {def.label}
+      </Text>
+      <FieldInput def={def} draft={draft} onChange={setDraft} />
+      <ErrorText error={invalid ?? error} />
+      <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end" }}>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -1,7 +1,6 @@
 """Custom fields — the definitions and value rules.
 
-A field is a fact someone needs to filter, sort, or show in a column; prose that
-only needs to be read stays in the dossier. Two parts, both here as pure logic
+A field is a fact someone needs to filter, sort, or show in a column. Two parts, both here as pure logic
 (no database, no I/O), so the store and the tests share one statement of each
 rule:
 
@@ -106,8 +105,6 @@ CORE_FIELDS: dict[str, tuple[tuple[str, str, str], ...]] = {
         ),
         ("lead_source", "text", "How the lead arrived: referral / inbound / outbound / …"),
         ("source", "text", "Provenance of the record."),
-        ("dossier", "text", "Markdown research notes."),
-        ("dossier_updated_at", "timestamp", "When the dossier was last written."),
         ("created_at", "timestamp", "When the record was created."),
         ("updated_at", "timestamp", "When the record last changed."),
     ),
@@ -123,8 +120,6 @@ CORE_FIELDS: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("status", "text", "discovered (an unpromoted lookalike) / active."),
         ("archived_at", "timestamp", "When the organization was archived; absent when not."),
         ("source", "text", "Provenance of the record."),
-        ("dossier", "text", "Markdown research notes."),
-        ("dossier_updated_at", "timestamp", "When the dossier was last written."),
         ("created_at", "timestamp", "When the record was created."),
         ("updated_at", "timestamp", "When the record last changed."),
     ),
@@ -145,8 +140,6 @@ CORE_FIELDS: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("close_date", "date", "Target or actual close date."),
         ("closed_at", "timestamp", "When the deal entered a won or lost stage."),
         ("source", "text", "Provenance of the record."),
-        ("dossier", "text", "Markdown research notes."),
-        ("dossier_updated_at", "timestamp", "When the dossier was last written."),
         ("created_at", "timestamp", "When the record was created."),
         ("updated_at", "timestamp", "When the record last changed."),
     ),

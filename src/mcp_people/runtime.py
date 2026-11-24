@@ -124,8 +124,6 @@ class Limits:
     * ``max_pipeline_stages`` and ``max_signal_types`` count every stage and type ever
       defined, retired ones and the default pipeline's seeded stages included. Seeding is
       never refused; a define past the count is.
-    * ``max_dossier_bytes`` bounds one dossier in UTF-8 bytes, as stored after a write that
-      sets or appends to it. The core's own cap on a dossier applies as well.
     * ``max_import_rows`` bounds the rows of one import call; a longer import is refused
       whole. The core's own cap on an import applies as well.
     """
@@ -142,7 +140,6 @@ class Limits:
     max_custom_fields: int | None = None
     max_pipeline_stages: int | None = None
     max_signal_types: int | None = None
-    max_dossier_bytes: int | None = None
     max_import_rows: int | None = None
 
 
@@ -217,7 +214,6 @@ class PeopleEvent(StrEnum):
     MAX_CUSTOM_FIELDS_REFUSED = "max_custom_fields_refused"
     MAX_PIPELINE_STAGES_REFUSED = "max_pipeline_stages_refused"
     MAX_SIGNAL_TYPES_REFUSED = "max_signal_types_refused"
-    MAX_DOSSIER_BYTES_REFUSED = "max_dossier_bytes_refused"
     MAX_IMPORT_ROWS_REFUSED = "max_import_rows_refused"
 
 

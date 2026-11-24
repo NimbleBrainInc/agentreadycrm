@@ -76,7 +76,9 @@ organization = Table(
     Column("employee_range", Text, nullable=True),  # headcount band, e.g. "51-200"
     Column("revenue_range", Text, nullable=True),  # revenue band
     Column("headquarters", Text, nullable=True),  # headquarters location (finer than region)
-    Column("dossier", Text, nullable=True),  # markdown research store
+    # No tool reads or writes the dossier pair; the columns stay so a database that holds
+    # dossiers keeps them.
+    Column("dossier", Text, nullable=True),
     Column("dossier_updated_at", UTCDateTime(), nullable=True),
     Column("source", Text, nullable=True),  # provenance: research/manual/import/similar_companies
     # Provenance lifecycle: `discovered` (auto-persisted lookalike, hidden from the
@@ -117,7 +119,9 @@ contact = Table(
     Column("title", Text, nullable=True),  # role at the org
     # works_at edge → organization. Nullable; FK is authoritative from creation.
     Column("organization_id", Text, ForeignKey("organization.id"), nullable=True),
-    Column("dossier", Text, nullable=True),  # markdown research store
+    # No tool reads or writes the dossier pair; the columns stay so a database that holds
+    # dossiers keeps them.
+    Column("dossier", Text, nullable=True),
     Column("dossier_updated_at", UTCDateTime(), nullable=True),
     Column("lead_source", Text, nullable=True),  # open string, NOT an enum
     # Lifecycle an outreach agent reads/writes. Open string, NOT an enum;
@@ -259,7 +263,9 @@ opportunity = Table(
     # Stamped when the opportunity enters a terminal stage (won/lost), cleared when
     # it leaves one. Owned by set_opportunity_stage — the transition verb.
     Column("closed_at", UTCDateTime(), nullable=True),
-    Column("dossier", Text, nullable=True),  # markdown research store
+    # No tool reads or writes the dossier pair; the columns stay so a database that holds
+    # dossiers keeps them.
+    Column("dossier", Text, nullable=True),
     Column("dossier_updated_at", UTCDateTime(), nullable=True),
     Column("source", Text, nullable=True),  # provenance: manual / import / the writing tool
     # Custom field values by key, each `{v, by, at, why}`.
@@ -687,10 +693,8 @@ ix_interaction_opportunity = Index(
     interaction.c.opportunity_id,
 )
 
-# Signal — a dated, URL-attested fact about an account
-# . The evidence row beneath the dossier's prose synthesis:
-# the dossier says what we think, a signal is a thing someone else published that
-# we can quote and a reviewer can open. `signal_type` / `status` stay open Text (no
+# Signal — a dated, URL-attested fact about an account: a thing someone else published
+# that we can quote and a reviewer can open. `signal_type` / `status` stay open Text (no
 # CHECK, no DB enum, same as every other column here) and are validated app-side:
 # `signal_type` against the workspace's `signal_type` rows, `status` against
 # `evidence.SIGNAL_STATUSES`. A signal carries no grade: judging a fact against

@@ -18,11 +18,21 @@ const { host } = vi.hoisted(() => ({
     toolName: undefined as string | undefined,
     toolInput: null as Record<string, unknown> | null,
     toolResult: null as { structuredContent?: unknown } | null,
+    // The extensions the host declares, and the addresses the view asked it to open.
+    experimental: {} as Record<string, object>,
+    opened: [] as string[],
   },
 }));
 
 vi.mock("@nimblebrain/synapse/react", () => ({
-  useApp: () => ({ toolInfo: host.toolName ? { tool: { name: host.toolName } } : undefined }),
+  useApp: () => ({
+    toolInfo: host.toolName ? { tool: { name: host.toolName } } : undefined,
+    hostCapabilities: { experimental: host.experimental },
+  }),
+  useOpen: () => async (uri: string) => {
+    host.opened.push(uri);
+    return true;
+  },
   useToolInput: () => host.toolInput,
   useToolResult: () => host.toolResult,
   useDataSync: (onSync: () => void) => {
@@ -53,11 +63,13 @@ function Page({
   id,
   onLoaded,
   refreshKey,
+  openInApp,
 }: {
   kind: string;
   id: string;
   onLoaded: (label: string) => void;
   refreshKey?: number;
+  openInApp?: unknown;
 }) {
   useEffect(() => {
     const name = NAMES[id];
@@ -66,7 +78,7 @@ function Page({
   useEffect(() => {
     host.mounts += 1;
   }, []);
-  return createElement("section", { "data-page": kind, "data-id": id, "data-refresh": refreshKey });
+  return createElement("section", { "data-page": kind, "data-id": id, "data-refresh": refreshKey }, openInApp as never);
 }
 
 vi.mock("./people/RecordList", () => ({
@@ -78,16 +90,16 @@ vi.mock("./people/RecordList", () => ({
     ),
 }));
 vi.mock("./people/PersonPage", () => ({
-  PersonPage: (p: { contactId: string; onLoaded: (l: string) => void; refreshKey?: number }) =>
-    createElement(Page, { kind: "person", id: p.contactId, onLoaded: p.onLoaded, refreshKey: p.refreshKey }),
+  PersonPage: (p: { contactId: string; onLoaded: (l: string) => void; refreshKey?: number; openInApp?: unknown }) =>
+    createElement(Page, { kind: "person", id: p.contactId, onLoaded: p.onLoaded, refreshKey: p.refreshKey, openInApp: p.openInApp }),
 }));
 vi.mock("./components/OrganizationDetail", () => ({
-  OrganizationDetail: (p: { organizationId: string; onLoaded: (l: string) => void; refreshKey?: number }) =>
-    createElement(Page, { kind: "organization", id: p.organizationId, onLoaded: p.onLoaded, refreshKey: p.refreshKey }),
+  OrganizationDetail: (p: { organizationId: string; onLoaded: (l: string) => void; refreshKey?: number; openInApp?: unknown }) =>
+    createElement(Page, { kind: "organization", id: p.organizationId, onLoaded: p.onLoaded, refreshKey: p.refreshKey, openInApp: p.openInApp }),
 }));
 vi.mock("./people/OpportunityPage", () => ({
-  OpportunityPage: (p: { opportunityId: string; onLoaded: (l: string) => void; refreshKey?: number }) =>
-    createElement(Page, { kind: "opportunity", id: p.opportunityId, onLoaded: p.onLoaded, refreshKey: p.refreshKey }),
+  OpportunityPage: (p: { opportunityId: string; onLoaded: (l: string) => void; refreshKey?: number; openInApp?: unknown }) =>
+    createElement(Page, { kind: "opportunity", id: p.opportunityId, onLoaded: p.onLoaded, refreshKey: p.refreshKey, openInApp: p.openInApp }),
 }));
 vi.mock("./components/forms", () => ({
   NewContactForm: () => null,
@@ -126,6 +138,8 @@ beforeEach(() => {
   host.toolName = undefined;
   host.toolInput = null;
   host.toolResult = null;
+  host.experimental = {};
+  host.opened = [];
 });
 
 afterEach(() => {
@@ -364,5 +378,46 @@ describe("the scroll position of the view", () => {
     await navigate("ui://people/contacts");
     expect(shown()).toBeNull();
     expect(scroller().scrollTop).toBe(480);
+  });
+});
+
+describe("open in app, from a view inline in a conversation", () => {
+  const OPEN = "ai.nimblebrain/open";
+  const openInApp = () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Open in app");
+  const inlineRead = (tool: string, key: string, id: string) => {
+    host.toolName = tool;
+    host.toolResult = { structuredContent: { [key]: { id } } };
+  };
+
+  it("opens the record it shows in the app's own page, on a host that declares opening", async () => {
+    host.experimental = { [OPEN]: {} };
+    inlineRead("get_organization", "organization", "org_01A");
+    await mount("organization");
+    await act(async () => openInApp()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(host.opened).toEqual(["people://organizations/org_01A"]);
+  });
+
+  it("follows the record opened in place from the inline view", async () => {
+    host.experimental = { [OPEN]: {} };
+    inlineRead("get_contact", "contact", "ct_01A");
+    await mount("contact");
+    await navigate("people://opportunities/op_01A");
+    await act(async () => openInApp()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(host.opened).toEqual(["people://opportunities/op_01A"]);
+  });
+
+  it("is not offered on a host that does not declare opening", async () => {
+    inlineRead("get_contact", "contact", "ct_01A");
+    await mount("contact");
+    expect(shown()).toBe("person:ct_01A");
+    expect(openInApp()).toBeUndefined();
+  });
+
+  it("is not offered in the app's own page, which no tool call rendered", async () => {
+    host.experimental = { [OPEN]: {} };
+    await mount("contact");
+    await navigate("people://contacts/ct_01A");
+    expect(shown()).toBe("person:ct_01A");
+    expect(openInApp()).toBeUndefined();
   });
 });

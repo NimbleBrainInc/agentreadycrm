@@ -10,7 +10,6 @@ const described: DescribeFieldsResult = {
         { key: "email", type: "text", description: "" },
         { key: "email_status", type: "select", description: "" },
         { key: "title", type: "text", description: "" },
-        { key: "dossier", type: "text", description: "" },
         { key: "effective_status", type: "text", description: "" },
       ],
       custom: [
@@ -23,7 +22,6 @@ const described: DescribeFieldsResult = {
         { key: "name", type: "text", description: "" },
         { key: "domain", type: "text", description: "" },
         { key: "industry", type: "text", description: "" },
-        { key: "dossier", type: "text", description: "" },
       ],
       custom: [
         { entity: "organization", key: "fit", label: "Fit", type: "select", options: ["Strong"], created_at: "", updated_at: "" },
@@ -40,7 +38,6 @@ const described: DescribeFieldsResult = {
         { key: "probability", type: "number", description: "" },
         { key: "weighted_value", type: "number", description: "" },
         { key: "close_date", type: "date", description: "" },
-        { key: "dossier", type: "text", description: "" },
       ],
       custom: [
         { entity: "opportunity", key: "champion", label: "Champion", type: "select", options: ["Yes", "No"], created_at: "", updated_at: "" },

@@ -82,7 +82,7 @@
     },
     {
       "name": "update_contact",
-      "description": "Change a contact's fields, custom fields, external references or research dossier; only what is passed changes."
+      "description": "Change a contact's fields, custom fields or external references; only what is passed changes."
     },
     {
       "name": "merge_contacts",
@@ -110,7 +110,7 @@
     },
     {
       "name": "update_organization",
-      "description": "Change an organization's fields, custom fields, external references or research dossier; only what is passed changes."
+      "description": "Change an organization's fields, custom fields or external references; only what is passed changes."
     },
     {
       "name": "log_interaction",
@@ -186,7 +186,7 @@
     },
     {
       "name": "update_opportunity",
-      "description": "Change a deal's fields, custom fields or research dossier; the stage moves with move_opportunity."
+      "description": "Change a deal's fields or custom fields; the stage moves with move_opportunity."
     },
     {
       "name": "move_opportunity",

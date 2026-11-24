@@ -233,14 +233,6 @@ WRITES: dict[str, Case] = {
             "direction": "outbound",
         },
     ),
-    "update_contact/dossier": (
-        "update_contact",
-        lambda ids: {"contact_id": ids["contact"], "dossier": "notes"},
-    ),
-    "update_organization/dossier_append": (
-        "update_organization",
-        lambda ids: {"organization_id": ids["org"], "dossier_append": "notes"},
-    ),
     "link_similar_organizations": (
         "link_similar_organizations",
         lambda ids: {
@@ -271,10 +263,6 @@ WRITES: dict[str, Case] = {
     "move_opportunity": (
         "move_opportunity",
         lambda ids: {"opportunity_id": ids["opp"], "stage": "proposal"},
-    ),
-    "update_opportunity/dossier": (
-        "update_opportunity",
-        lambda ids: {"opportunity_id": ids["opp"], "dossier": "deal notes"},
     ),
     "record_signal": (
         "record_signal",
@@ -397,10 +385,6 @@ FAILED_WRITES: dict[str, Case] = {
         lambda ids: {"signal_id": ids["signal"], "remove_evidence_for": ["unstated"]},
     ),
     "update_signal/nothing": ("update_signal", lambda ids: {"signal_id": ids["signal"]}),
-    "update_contact/both_dossiers": (
-        "update_contact",
-        lambda ids: {"contact_id": ids["contact"], "dossier": "a", "dossier_append": "b"},
-    ),
     "update_organization/undefined_field": (
         "update_organization",
         lambda ids: {"organization_id": ids["org"], "fields": {"undefined": 1}},

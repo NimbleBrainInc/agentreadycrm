@@ -165,7 +165,6 @@ async def exercise_every_tool(client: Client) -> set[str]:
     again = await run("find_or_create_organization", name="ACME corp", domain="ACME.example")
     assert again["organization"]["id"] == org_id
     await run("update_organization", organization_id=org_id, region="EMEA")
-    await run("update_organization", organization_id=org_id, dossier="Buys tooling.")
     assert (await run("get_organization", organization_id=org_id))["organization"]["region"] == (
         "EMEA"
     )
@@ -177,7 +176,6 @@ async def exercise_every_tool(client: Client) -> set[str]:
     )
     contact_id = ada["contact"]["id"]
     await run("update_contact", contact_id=contact_id, title="CTO", fields={"score": 7})
-    await run("update_contact", contact_id=contact_id, dossier_append="Met at a conference.")
     assert (await run("get_contact", contact_id=contact_id))["contact"]["title"] == "CTO"
     found = await run("resolve_external_refs", refs=["vendor://companies/1", "vendor://x/2"])
     assert found["missing"] == ["vendor://x/2"]
@@ -260,7 +258,6 @@ async def exercise_every_tool(client: Client) -> set[str]:
     deal_id = deal["opportunity"]["id"]
     await run("update_opportunity", opportunity_id=deal_id, probability=40)
     await run("move_opportunity", opportunity_id=deal_id, stage="pilot")
-    await run("update_opportunity", opportunity_id=deal_id, dossier="Champion: Ada.")
     assert (await run("get_opportunity", opportunity_id=deal_id))["opportunity"]["stage"] == "pilot"
     assert (await run("list_opportunities"))["opportunities"]
     assert "interactions" in await run("list_interactions", opportunity_id=deal_id)

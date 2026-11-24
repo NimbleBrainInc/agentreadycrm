@@ -4,7 +4,7 @@ These tests exercise the data-access layer on a database at the local schema's
 head (``conftest.py``). They assert **behavior**, not implementation: idempotent convergence (call
 twice, assert one row), the works_at org edge reuse, the immutable-id linkage on
 interactions (rename the org → past interaction unchanged), null-safe partial
-updates, dossier stamping, opaque-cursor pagination that walks every row, and
+updates, opaque-cursor pagination that walks every row, and
 domain-dedupe normalization.
 
 Each test opens a fresh session per logical request (mirroring how the
@@ -14,7 +14,6 @@ commits — not within one accidentally-shared transaction.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
@@ -400,116 +399,30 @@ async def test_update_contact_is_null_safe(app_engine):
 
 
 # --------------------------------------------------------------------------- #
-# 5. Dossier stamping: returns previous; empty string clears                  #
+# 5. A stored dossier is kept and never read                                  #
 # --------------------------------------------------------------------------- #
 
 
-async def test_set_contact_dossier_stamps_and_clears(app_engine):
-    """set_contact_dossier stamps ``dossier_updated_at`` and returns the previous
-    value; an empty string clears the dossier and its timestamp."""
-    ctx = make_ctx(_tid(), workspace_id="ws_1")
-
-    async with session_for(ctx) as conn:
-        c, _, _ = await store.find_or_create_contact(
-            conn, ctx, name="Ivan", email="ivan@ex.example"
-        )
-    assert c.dossier is None
-    assert c.dossier_updated_at is None
-
-    # First write: previous is None, dossier + timestamp now set.
-    async with session_for(ctx) as conn:
-        written, previous = await store.set_contact_dossier(
-            conn, ctx, contact_id=c.id, dossier="# Ivan\nDeep researcher."
-        )
-    assert previous is None
-    assert written.dossier == "# Ivan\nDeep researcher."
-    assert written.dossier_updated_at is not None
-    first_stamp = written.dossier_updated_at
-
-    # Second write: previous is the FIRST stamp; new stamp is set.
-    async with session_for(ctx) as conn:
-        rewritten, previous2 = await store.set_contact_dossier(
-            conn, ctx, contact_id=c.id, dossier="# Ivan\nUpdated."
-        )
-    assert previous2 == first_stamp
-    assert rewritten.dossier == "# Ivan\nUpdated."
-
-    # Empty string clears both the dossier and its timestamp.
-    async with session_for(ctx) as conn:
-        cleared, previous3 = await store.set_contact_dossier(conn, ctx, contact_id=c.id, dossier="")
-    assert previous3 == rewritten.dossier_updated_at
-    assert cleared.dossier is None
-    assert cleared.dossier_updated_at is None
-
-
-async def test_dossier_append_adds_without_a_read_and_keeps_concurrent_appends(app_engine):
-    """append joins text after the current dossier (or starts it), stamps it, and an
-    append that overlaps an uncommitted one waits on the row and keeps it.
-
-    The second append starts while the first holds the row, so it reads the dossier
-    from before the first: a read-merge-write would overwrite the first's text.
-    """
-    ctx = make_ctx(_tid(), workspace_id="ws_1")
-    async with session_for(ctx) as conn:
-        org, _, _ = await store.find_or_create_organization(
-            conn, ctx, name="Larkfield", domain="larkfield.example"
-        )
-
-    async with session_for(ctx) as conn:
-        started, _ = await store.set_organization_dossier(
-            conn, ctx, org_id=org.id, dossier="## Funding\nSeries B.", append=True
-        )
-    assert started.dossier == "## Funding\nSeries B."
-    assert started.dossier_updated_at is not None
-
-    async def add(text: str) -> None:
-        async with session_for(ctx) as conn:
-            await store.set_organization_dossier(
-                conn, ctx, org_id=org.id, dossier=text, append=True
-            )
-
-    async with session_for(ctx) as first:
-        await store.set_organization_dossier(
-            first, ctx, org_id=org.id, dossier="## Hiring\nTen open roles.", append=True
-        )
-        second = asyncio.create_task(add("## Stack\nPostgres."))
-        done, _pending = await asyncio.wait({second}, timeout=0.5)
-        assert not done, "the second append must wait for the first to commit"
-    await second
-    async with session_for(ctx) as conn:
-        got, _counts = await store.get_organization(conn, ctx, org_id=org.id)
-    assert got.dossier is not None
-    sections = got.dossier.split("\n\n")
-    assert sections[0] == "## Funding\nSeries B."
-    assert sections[1:] == ["## Hiring\nTen open roles.", "## Stack\nPostgres."]
-
-
-async def test_dossier_append_refuses_nothing_and_past_the_cap(app_engine, monkeypatch):
+async def test_a_stored_dossier_is_kept_and_never_read(app_engine):
+    """A database can hold dossiers no tool reads or writes: the record reads without
+    one, it sets no stage floor, and an update leaves the stored text as it was."""
     ctx = make_ctx(_tid(), workspace_id="ws_1")
     async with session_for(ctx) as conn:
         c, _, _ = await store.find_or_create_contact(
             conn, ctx, name="Ivan", email="ivan@ex.example"
         )
-        await store.set_contact_dossier(conn, ctx, contact_id=c.id, dossier="x" * 60)
-
-    with pytest.raises(ValueError, match="pass the text to add"):
-        async with session_for(ctx) as conn:
-            await store.set_contact_dossier(conn, ctx, contact_id=c.id, dossier="  ", append=True)
-
-    monkeypatch.setattr(store, "_CAP_DOSSIER", 100)
-    with pytest.raises(ValueError, match="past its maximum length"):
-        async with session_for(ctx) as conn:
-            await store.set_contact_dossier(
-                conn, ctx, contact_id=c.id, dossier="y" * 60, append=True
-            )
+        await conn.execute(
+            contact.update().where(contact.c.id == c.id).values(dossier="# Ivan\nResearch.")
+        )
     async with session_for(ctx) as conn:
-        kept, _counts = await store.get_contact(conn, ctx, contact_id=c.id)
-    assert kept.dossier == "x" * 60
-
-    # A row gone since the setter's scoped read is not reported as past the cap:
-    # the write is a no-op and the setter's re-read raises not-found.
-    async with session_for(ctx) as conn:
-        await store._write_dossier(conn, contact, str(uuid.uuid4()), "y" * 60, append=True)
+        await store.update_contact(conn, ctx, contact_id=c.id, title="Researcher")
+        got, _counts = await store.get_contact(conn, ctx, contact_id=c.id)
+        stored = (
+            await conn.execute(select(contact.c.dossier).where(contact.c.id == c.id))
+        ).scalar_one()
+    assert "dossier" not in got.model_dump()
+    assert got.effective_status == "sourced"
+    assert stored == "# Ivan\nResearch."
 
 
 # --------------------------------------------------------------------------- #
@@ -794,23 +707,8 @@ async def test_log_interaction_same_key_different_contacts_are_distinct(app_engi
 
 
 # --------------------------------------------------------------------------- #
-# 11. Input size caps: over-length dossier (and others) raise ValueError       #
+# 11. Input size caps: an over-length value raises ValueError                 #
 # --------------------------------------------------------------------------- #
-
-
-async def test_oversized_dossier_raises_value_error(app_engine):
-    """A dossier over the 256 KiB cap raises ValueError (mapped to invalid_request
-    at the tool layer) rather than bloating a row."""
-    ctx = make_ctx(_tid(), workspace_id="ws_1")
-    async with session_for(ctx) as conn:
-        contact, _, _ = await store.find_or_create_contact(
-            conn, ctx, name="Nora", email="nora@ex.example"
-        )
-
-    too_big = "x" * (store._CAP_DOSSIER + 1)
-    with pytest.raises(ValueError, match="dossier exceeds the maximum length"):
-        async with session_for(ctx) as conn:
-            await store.set_contact_dossier(conn, ctx, contact_id=contact.id, dossier=too_big)
 
 
 async def test_oversized_name_raises_value_error(app_engine):
@@ -1071,18 +969,18 @@ async def test_no_email_exact_org_match_preferred_over_stub(app_engine):
 
 
 async def test_merge_contacts_reassigns_fills_and_archives(app_engine):
-    """Merge a source (with interactions + a dossier the target lacks) into a
+    """Merge a source (with interactions + a title the target lacks) into a
     target: interactions move to the target, the target's EMPTY fields fill from
     source, already-set target fields are NOT overwritten, and the source is
     archived (archived_at set), not deleted."""
     ctx = make_ctx(_tid(), workspace_id="ws_1")
 
-    # Target: has a phone (must NOT be overwritten), no dossier, no email.
+    # Target: has a phone (must NOT be overwritten), no title, no email.
     async with session_for(ctx) as conn:
         target, _, _ = await store.find_or_create_contact(
             conn, ctx, name="Dup Target", phone="555-TARGET"
         )
-        # Source: has an email + phone + a dossier; some overlap with target.
+        # Source: has an email + phone + a title; some overlap with target.
         source, _, _ = await store.find_or_create_contact(
             conn,
             ctx,
@@ -1090,9 +988,6 @@ async def test_merge_contacts_reassigns_fills_and_archives(app_engine):
             email="dup@ex.example",
             phone="555-SOURCE",
             title="Engineer",
-        )
-        source, _prev = await store.set_contact_dossier(
-            conn, ctx, contact_id=source.id, dossier="# Source dossier"
         )
         # Two interactions on the source.
         ix1 = await store.log_interaction(
@@ -1117,10 +1012,8 @@ async def test_merge_contacts_reassigns_fills_and_archives(app_engine):
     assert merged.phone == "555-TARGET"  # already set → preserved
     assert merged.email == "dup@ex.example"  # was empty → filled
     assert merged.title == "Engineer"  # was empty → filled
-    assert merged.dossier == "# Source dossier"  # was empty → filled
-    assert merged.dossier_updated_at is not None
     assert "email" in summary["fields_filled"]
-    assert "dossier" in summary["fields_filled"]
+    assert "title" in summary["fields_filled"]
     assert "phone" not in summary["fields_filled"]
 
     # Source archived (not hard-deleted): absent from the default view, present

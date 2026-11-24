@@ -8,7 +8,6 @@ projection is a view, not a write.
 
 Floor rules (a fact People owns → the minimum stage it implies):
 
-* a non-empty ``dossier``            ⇒ at least ``enriched``
 * an **outbound** touch interaction  ⇒ at least ``contacted``
 * an **inbound** touch interaction   ⇒ at least ``engaged``
 
@@ -23,9 +22,7 @@ The derivation lives **once**, in SQL (:func:`effective_status_sql`): it is the
 the returned field and the filter cannot diverge. :func:`effective_status` is the
 pure-Python **oracle**: not used in production, it re-derives the floor
 independently so ``tests/test_lifecycle.py`` can assert the SQL matches it across
-the full input matrix. (Dossier presence is NULL-ness, not string content: the
-store normalizes empty/whitespace dossiers to NULL at write time, so both encodings
-check only NULL and stay identical on every input.)
+the full input matrix.
 """
 
 from __future__ import annotations
@@ -40,7 +37,6 @@ LADDER: dict[str, int] = {"sourced": 0, "enriched": 1, "contacted": 2, "engaged"
 def effective_status(
     status: str,
     *,
-    has_dossier: bool,
     has_outbound: bool,
     has_inbound: bool,
 ) -> str:
@@ -56,14 +52,11 @@ def effective_status(
         return "engaged"
     if has_outbound and rank < LADDER["contacted"]:
         return "contacted"
-    if has_dossier and rank < LADDER["enriched"]:
-        return "enriched"
     return status
 
 
 def effective_status_sql(
     status_col: ColumnElement[str],
-    has_dossier: ColumnElement[bool],
     has_outbound: ColumnElement[bool],
     has_inbound: ColumnElement[bool],
 ) -> ColumnElement[str]:
@@ -71,13 +64,12 @@ def effective_status_sql(
 
     Mirrors :func:`effective_status` branch-for-branch; the equivalence is asserted
     by ``test_lifecycle``. ``has_*`` are boolean column expressions — in production
-    ``dossier IS NOT NULL`` and interaction ``EXISTS`` probes, under test literals —
+    interaction ``EXISTS`` probes, under test literals —
     each referenced exactly once here, so the ``EXISTS`` are evaluated once per row.
     """
     rank = case(*[(status_col == stage, r) for stage, r in LADDER.items()], else_=None)
     return case(
         (and_(has_inbound, rank < LADDER["engaged"]), "engaged"),
         (and_(has_outbound, rank < LADDER["contacted"]), "contacted"),
-        (and_(has_dossier, rank < LADDER["enriched"]), "enriched"),
         else_=status_col,
     )
