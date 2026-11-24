@@ -418,11 +418,15 @@ export type RecordKind = "contact" | "organization" | "opportunity";
 /** Who a value set here is attributed to, as the record's field history shows it. */
 export const SET_IN_APP = "a person, in the People app";
 
-/** A value as the form edits it: the chosen options of a multi-select, text for every other type. */
+/**
+ * A value as the form edits it: the chosen options of a multi-select, the items of a list
+ * (each its own entry, so an item keeps any comma it holds), text for every other type.
+ */
 type Draft = string | string[];
 
 function draftOf(def: FieldDef, value: unknown): Draft {
   if (def.type === "multi_select") return Array.isArray(value) ? value.map(String) : [];
+  if (def.type === "list") return Array.isArray(value) && value.length ? value.map(String) : [""];
   if (value === undefined || value === null) return "";
   if (Array.isArray(value)) return value.join(", ");
   return String(value);
@@ -434,7 +438,10 @@ function draftOf(def: FieldDef, value: unknown): Draft {
  * it words it; only a number that is not one is refused here, since it cannot be sent as one.
  */
 export function fieldValue(def: FieldDef, draft: Draft): { value: unknown } | { invalid: string } {
-  if (Array.isArray(draft)) return { value: draft.length ? draft : null };
+  if (Array.isArray(draft)) {
+    const items = draft.filter((item) => item.trim());
+    return { value: items.length ? items : null };
+  }
   const text = draft.trim();
   if (!text) return { value: null };
   switch (def.type) {
@@ -444,10 +451,6 @@ export function fieldValue(def: FieldDef, draft: Draft): { value: unknown } | { 
     }
     case "boolean":
       return { value: text === "true" };
-    case "list": {
-      const items = text.split(",").map((item) => item.trim()).filter(Boolean);
-      return { value: items.length ? items : null };
-    }
     default:
       return { value: text };
   }
@@ -472,6 +475,32 @@ function FieldInput({ def, draft, onChange }: { def: FieldDef; draft: Draft; onC
           </label>
         ))}
       </fieldset>
+    );
+  }
+  if (def.type === "list") {
+    const items = Array.isArray(draft) ? draft : [];
+    return (
+      <div role="group" aria-label={def.label} style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+        {items.map((item, i) => (
+          // biome-ignore lint: an item has no identity but its place in the list.
+          <span key={i} style={{ display: "flex", gap: "0.3rem" }}>
+            <input
+              aria-label={`${def.label} item ${i + 1}`}
+              value={item}
+              onChange={(e) => onChange(items.map((old, j) => (j === i ? e.target.value : old)))}
+              // biome-ignore lint: autoFocus puts the reader in the field they asked to edit.
+              autoFocus={i === 0}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${def.label} item ${i + 1}`} onClick={() => onChange(items.filter((_, j) => j !== i))}>
+              Remove
+            </Button>
+          </span>
+        ))}
+        <Button type="button" variant="ghost" size="sm" onClick={() => onChange([...items, ""])}>
+          Add item
+        </Button>
+      </div>
     );
   }
   const text = Array.isArray(draft) ? "" : draft;
@@ -499,7 +528,6 @@ function FieldInput({ def, draft, onChange }: { def: FieldDef; draft: Draft; onC
       step={def.type === "number" ? "any" : undefined}
       min={def.minimum ?? undefined}
       max={def.maximum ?? undefined}
-      placeholder={def.type === "list" ? "Separate items with commas" : undefined}
       value={text}
       onChange={(e) => onChange(e.target.value)}
       // biome-ignore lint: autoFocus puts the reader in the field they asked to edit.

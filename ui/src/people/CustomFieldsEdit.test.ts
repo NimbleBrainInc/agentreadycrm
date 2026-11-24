@@ -84,9 +84,25 @@ describe("a value in the Fields card", () => {
     expect(call).toHaveBeenLastCalledWith("update_organization", expect.objectContaining({ fields: { seats: 12 } }));
 
     await edit("TAGS");
-    await type(container.querySelector("input"), "east, , west");
+    await type(container.querySelector("input"), "east");
+    await press(find("Add item"));
+    await press(find("Add item"));
+    await type(container.querySelector('input[aria-label="TAGS item 3"]'), "west");
     await press(find("Save"));
     expect(call).toHaveBeenLastCalledWith("update_organization", expect.objectContaining({ fields: { tags: ["east", "west"] } }));
+  });
+
+  it("keeps each list item whole, commas included, when saved unchanged or with one removed", async () => {
+    call.mockResolvedValue({ organization: {} });
+    await mount(DEFS, { tags: ["Acme, Inc.", "Other"] });
+    await edit("TAGS");
+    await press(find("Save"));
+    expect(call).toHaveBeenLastCalledWith("update_organization", expect.objectContaining({ fields: { tags: ["Acme, Inc.", "Other"] } }));
+
+    await edit("TAGS");
+    await press(container.querySelector('button[aria-label="Remove TAGS item 2"]'));
+    await press(find("Save"));
+    expect(call).toHaveBeenLastCalledWith("update_organization", expect.objectContaining({ fields: { tags: ["Acme, Inc."] } }));
   });
 
   it("shows the server's refusal and keeps the form open with what was typed", async () => {
