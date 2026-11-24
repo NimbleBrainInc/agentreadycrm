@@ -1,8 +1,8 @@
 """The local MCP bundle in ``mcpb/`` runs this distribution, at this version, on the local runtime.
 
 The bundle carries no code: its ``pyproject.toml`` pins the distribution, and the manifest
-starts the local command with ``uv run``. Its tool list is the registered tools, and its only
-host metadata is its trust declaration.
+starts the local command with ``uv run``. Its tool list is the registered tools, and it
+carries no host metadata.
 """
 
 from __future__ import annotations
