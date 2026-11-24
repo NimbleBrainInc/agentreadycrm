@@ -248,17 +248,5 @@
       "name": "list_proof_points",
       "description": "List recorded proof points newest first, filtered by client or verification."
     }
-  ],
-  "_meta": {
-    "org.mpaktrust": {
-      "mtf_version": "0.1",
-      "permissions": {
-        "filesystem": "write",
-        "network": "outbound",
-        "environment": "read",
-        "subprocess": "none",
-        "native": "none"
-      }
-    }
-  }
+  ]
 }

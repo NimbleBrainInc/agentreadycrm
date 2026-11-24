@@ -1,8 +1,8 @@
 """The local MCP bundle in ``mcpb/`` runs this distribution, at this version, on the local runtime.
 
 The bundle carries no code: its ``pyproject.toml`` pins the distribution, and the manifest
-starts the local command with ``uv run``. Its tool list is the registered tools, and its only
-host metadata is its trust declaration.
+starts the local command with ``uv run``. Its tool list is the registered tools, and it
+carries no host metadata.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ async def test_the_bundle_publishes_exactly_the_registered_tools() -> None:
 
 def test_the_bundle_places_nothing_in_a_nimblebrain_host() -> None:
     assert "ai.nimblebrain/host" not in json.dumps(MANIFEST)
-    assert set(MANIFEST["_meta"]) == {"org.mpaktrust"}
+    assert "_meta" not in MANIFEST
 
 
 async def test_the_server_reports_the_package_version() -> None:
